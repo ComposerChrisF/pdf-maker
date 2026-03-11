@@ -1,0 +1,25 @@
+[package]
+name = "pdf-merger"
+version = "0.9.2"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "CLI tool for merging, watermarking, and manipulating PDF files"
+repository = "https://github.com/ComposerChrisF/pdf-merger"
+keywords = ["pdf", "merge", "watermark", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "pdf-merger"
+path = "src/main.rs"
+
+[dependencies]
+medpdf = { version = "0.9.2", path = "../medpdf/medpdf" }
+medpdf-image = { version = "0.2.2", path = "../medpdf/medpdf-image" }
+lopdf = "0.39.0"
+clap = { version = "4.5.44", features = ["derive", "string"] }
+chrono = "0.4"
+uuid = { version = "1.18.0", features = ["v4", "fast-rng"] }
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3"
