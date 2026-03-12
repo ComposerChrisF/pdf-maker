@@ -3,5 +3,6 @@ in*.pdf
 out*.pdf
 *.docx.pdf
 *test*.pdf
+.cargo/config.toml
 .claude/settings.local.json
 .publish-bin.toml

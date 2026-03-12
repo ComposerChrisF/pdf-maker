@@ -14,11 +14,11 @@ Never commit changes to git without permission from the user.
 
 ## Repo Structure
 
-This is a standalone crate (no workspace). It depends on the sibling `medpdf` workspace via path dependencies.
+This is a standalone crate (no workspace). It depends on `medpdf` and `medpdf-image` from crates.io.
 
 ```
 pdf-merger/                    # Repository root
-├── Cargo.toml                 # Crate manifest (path deps to ../medpdf/)
+├── Cargo.toml                 # Crate manifest
 ├── src/
 │   ├── main.rs                # CLI args (clap), orchestrates pipeline
 │   └── spec_types.rs          # CLI spec types with FromStr (WatermarkSpec, etc.)
@@ -28,8 +28,8 @@ pdf-merger/                    # Repository root
 
 ### Dependencies
 
-- `medpdf` (path: `../medpdf/medpdf`) - Medium-level PDF library
-- `medpdf-image` (path: `../medpdf/medpdf-image`) - Image embedding companion crate
+- `medpdf` - Medium-level PDF library
+- `medpdf-image` - Image embedding companion crate
 
 ## Architecture
 
