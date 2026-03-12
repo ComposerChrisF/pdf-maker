@@ -5,7 +5,7 @@ A command-line tool for advanced PDF manipulation: merge pages from multiple PDF
 ## Installation
 
 ```bash
-cargo build --release -p pdf-merger
+cargo build --release
 ```
 
 The binary will be at `target/release/pdf-merger`.
