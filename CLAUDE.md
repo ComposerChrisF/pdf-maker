@@ -17,7 +17,7 @@ Never commit changes to git without permission from the user.
 This is a standalone crate (no workspace). It depends on `medpdf` and `medpdf-image` from crates.io.
 
 ```
-pdf-merger/                    # Repository root
+pdf-maker/                    # Repository root
 ├── Cargo.toml                 # Crate manifest
 ├── src/
 │   ├── main.rs                # CLI args (clap), orchestrates pipeline
@@ -33,7 +33,7 @@ pdf-merger/                    # Repository root
 
 ## Architecture
 
-**pdf-merger** is a CLI tool that uses medpdf for merging, overlaying, and watermarking PDFs.
+**pdf-maker** is a CLI tool that uses medpdf for merging, overlaying, and watermarking PDFs.
 
 ### 5-Phase Processing Pipeline (src/main.rs)
 
@@ -53,7 +53,7 @@ pdf-merger/                    # Repository root
 ### CLI Usage
 
 ```bash
-pdf-merger -o out.pdf in1.pdf "1-3" in2.pdf "all" \
+pdf-maker -o out.pdf in1.pdf "1-3" in2.pdf "all" \
   --watermark "text=DRAFT,font=@Helvetica,size=24,x=1,y=1,units=in,color=#FF0000,alpha=0.5,rotation=45,h_align=center,pages=all" \
   --overlay "file=overlay.pdf,src_page=1,target_pages=1-5" \
   --pad-to 4

@@ -1,4 +1,4 @@
-# pdf-merger
+# pdf-maker
 
 A command-line tool for advanced PDF manipulation: merge pages from multiple PDFs, apply overlays, add watermarks, and pad to page multiples.
 
@@ -8,12 +8,12 @@ A command-line tool for advanced PDF manipulation: merge pages from multiple PDF
 cargo build --release
 ```
 
-The binary will be at `target/release/pdf-merger`.
+The binary will be at `target/release/pdf-maker`.
 
 ## Usage
 
 ```bash
-pdf-merger -o <OUTPUT> <FILE> <PAGES> [<FILE> <PAGES>]... [OPTIONS]
+pdf-maker -o <OUTPUT> <FILE> <PAGES> [<FILE> <PAGES>]... [OPTIONS]
 ```
 
 ### Basic Merging
@@ -22,10 +22,10 @@ Input files and page specifications come in pairs:
 
 ```bash
 # Merge all pages from two PDFs
-pdf-merger -o combined.pdf doc1.pdf "all" doc2.pdf "all"
+pdf-maker -o combined.pdf doc1.pdf "all" doc2.pdf "all"
 
 # Merge specific pages
-pdf-merger -o output.pdf report.pdf "1-5" appendix.pdf "2,4,6"
+pdf-maker -o output.pdf report.pdf "1-5" appendix.pdf "2,4,6"
 ```
 
 ### Page Specifications
@@ -133,7 +133,7 @@ Optionally use a specific page for the last padding page:
 ### Merge with page selection
 
 ```bash
-pdf-merger -o report.pdf \
+pdf-maker -o report.pdf \
   cover.pdf "1" \
   content.pdf "all" \
   appendix.pdf "1-3,7"
@@ -142,27 +142,27 @@ pdf-merger -o report.pdf \
 ### Add watermark to all pages
 
 ```bash
-pdf-merger -o draft.pdf document.pdf "all" \
+pdf-maker -o draft.pdf document.pdf "all" \
   --watermark "text=DRAFT,font=@Helvetica-Bold,size=72,x=2,y=5,units=in"
 ```
 
 ### Apply letterhead overlay
 
 ```bash
-pdf-merger -o branded.pdf document.pdf "all" \
+pdf-maker -o branded.pdf document.pdf "all" \
   --overlay "file=letterhead.pdf,src_page=1,target_pages=all"
 ```
 
 ### Prepare for booklet printing (4-page signatures)
 
 ```bash
-pdf-merger -o booklet.pdf document.pdf "all" --pad-to 4
+pdf-maker -o booklet.pdf document.pdf "all" --pad-to 4
 ```
 
 ### Complex workflow
 
 ```bash
-pdf-merger -o final.pdf \
+pdf-maker -o final.pdf \
   intro.pdf "1-2" \
   main.pdf "all" \
   appendix.pdf "5-" \
