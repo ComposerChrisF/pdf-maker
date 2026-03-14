@@ -184,7 +184,7 @@ The tool processes PDFs in five phases:
 
 ## Acknowledgments
 
-Built on [medpdf](https://github.com/ComposerChrisF/medpdf), a medium-level PDF API over the excellent [lopdf](https://github.com/nickel-org/lopdf) rust crate.
+Built on [medpdf](https://github.com/ComposerChrisF/medpdf), a medium-level PDF API over the excellent [lopdf](https://github.com/J-F-Liu/lopdf) rust crate.
 
 ## Related Projects
 
