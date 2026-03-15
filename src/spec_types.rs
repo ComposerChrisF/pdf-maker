@@ -744,6 +744,7 @@ pub struct NupSpec {
     pub gutter: f32,
     pub order: GridOrder,
     pub border: bool,
+    pub repeat: u32,
 }
 
 impl FromStr for NupSpec {
@@ -761,6 +762,7 @@ impl FromStr for NupSpec {
         let mut units = None;
         let mut order = None;
         let mut border = None;
+        let mut repeat = None;
 
         for part in split_escaped_commas(s) {
             let (key, value) = part.split_once('=')
@@ -791,6 +793,16 @@ impl FromStr for NupSpec {
                     _ => return Err(format!("Invalid order: '{}'. Use lrtb, rltb, tblr, or tbrl.", value)),
                 }),
                 "border" => border = Some(value.parse::<bool>().map_err(|_| format!("Invalid border value: '{}'. Use true or false.", value))?),
+                "repeat" => repeat = Some(match value.to_lowercase().as_str() {
+                    "auto" => 0u32, // sentinel, resolved after cols/rows are known
+                    _ => {
+                        let v = value.parse::<u32>().map_err(|_| format!("Invalid repeat value: '{}'. Use a positive integer or 'auto'.", value))?;
+                        if v == 0 {
+                            return Err("repeat must be a positive integer or 'auto'".to_string());
+                        }
+                        v
+                    }
+                }),
                 _ => return Err(format!("Unknown nup key: '{}'", key)),
             }
         }
@@ -824,6 +836,13 @@ impl FromStr for NupSpec {
         let (pw, ph) = resolve_paper_dims(&paper, paper_w, paper_h, unit, (612.0, 792.0))?;
         let (pw, ph) = apply_orientation(pw, ph, orientation.unwrap_or_default(), cols, rows);
 
+        // Resolve repeat: 0 sentinel means "auto" = cols * rows
+        let repeat = match repeat {
+            Some(0) => cols * rows,
+            Some(v) => v,
+            None => 1,
+        };
+
         Ok(NupSpec {
             cols,
             rows,
@@ -833,6 +852,7 @@ impl FromStr for NupSpec {
             gutter: unit.to_points(gutter.unwrap_or(0.0)),
             order: order.unwrap_or_default(),
             border: border.unwrap_or(false),
+            repeat,
         })
     }
 }
@@ -2069,6 +2089,35 @@ mod tests {
     #[test]
     fn test_nup_spec_paper_w_without_paper_h() {
         assert!(NupSpec::from_str("n=4,paper_w=100").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_repeat_default() {
+        let spec = NupSpec::from_str("n=4").unwrap();
+        assert_eq!(spec.repeat, 1);
+    }
+
+    #[test]
+    fn test_nup_spec_repeat_auto() {
+        let spec = NupSpec::from_str("n=4,repeat=auto").unwrap();
+        assert_eq!(spec.repeat, 4); // 2x2 = 4
+    }
+
+    #[test]
+    fn test_nup_spec_repeat_auto_3x2() {
+        let spec = NupSpec::from_str("cols=3,rows=2,repeat=auto").unwrap();
+        assert_eq!(spec.repeat, 6); // 3x2 = 6
+    }
+
+    #[test]
+    fn test_nup_spec_repeat_explicit() {
+        let spec = NupSpec::from_str("n=4,repeat=3").unwrap();
+        assert_eq!(spec.repeat, 3);
+    }
+
+    #[test]
+    fn test_nup_spec_repeat_zero_error() {
+        assert!(NupSpec::from_str("n=4,repeat=0").is_err());
     }
 
     // --- BookletSpec ---

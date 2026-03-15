@@ -55,20 +55,31 @@ pub fn apply_nup(
         })
         .collect();
 
+    // Build expanded page list when repeat > 1
+    let expanded_pages: Vec<u32> = if spec.repeat > 1 {
+        (0..num_pages)
+            .flat_map(|p| std::iter::repeat_n(p, spec.repeat as usize))
+            .collect()
+    } else {
+        (0..num_pages).collect()
+    };
+    let total_cells = expanded_pages.len() as u32;
+
     // Build sheet layouts and border rects
     let mut sheets = Vec::new();
     let mut borders = Vec::new();
 
-    for group_start in (0..num_pages).step_by(cells_per_sheet as usize) {
+    for group_start in (0..total_cells).step_by(cells_per_sheet as usize) {
         let sheet_index = sheets.len();
         let mut placements = Vec::new();
 
         for i in 0..cells_per_sheet {
-            let page_idx = group_start + i;
-            if page_idx >= num_pages {
+            let cell_idx = group_start + i;
+            if cell_idx >= total_cells {
                 break;
             }
 
+            let page_idx = expanded_pages[cell_idx as usize];
             let (row, col) = grid_position(i, spec.cols, spec.rows, spec.order);
             let mb = media_boxes[page_idx as usize];
             let src_w = mb[2] - mb[0];
