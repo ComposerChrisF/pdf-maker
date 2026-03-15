@@ -13,8 +13,8 @@ name = "pdf-maker"
 path = "src/main.rs"
 
 [dependencies]
-medpdf = { path = "../medpdf/medpdf" }
-medpdf-image = "0.2.2"
+medpdf = { version = "0.10.0", path = "../medpdf/medpdf" }
+medpdf-image = { version = "0.3.0", path = "../medpdf/medpdf-image" }
 lopdf = "0.39.0"
 clap = { version = "4.5.44", features = ["derive", "string"] }
 chrono = "0.4"
