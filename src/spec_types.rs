@@ -392,6 +392,15 @@ impl FromStr for PadFileSpec {
     }
 }
 
+fn parse_paper_size(name: &str) -> Result<(f32, f32), String> {
+    match name.to_lowercase().as_str() {
+        "letter" => Ok((612.0, 792.0)),
+        "a4" => Ok((595.28, 841.89)),
+        "legal" => Ok((612.0, 1008.0)),
+        _ => Err(format!("Unknown paper size: '{}'. Use letter, a4, or legal.", name)),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BlankPageSpec {
     pub width: f32,
@@ -405,12 +414,9 @@ impl FromStr for BlankPageSpec {
         let trimmed = s.trim();
         // Check for named sizes (no '=' means it's a name, not key-value pairs)
         if !trimmed.contains('=') {
-            return match trimmed.to_lowercase().as_str() {
-                "letter" => Ok(BlankPageSpec { width: 612.0, height: 792.0, count: 1 }),
-                "a4" => Ok(BlankPageSpec { width: 595.28, height: 841.89, count: 1 }),
-                "legal" => Ok(BlankPageSpec { width: 612.0, height: 1008.0, count: 1 }),
-                _ => Err(format!("Unknown page size: '{}'. Use letter, a4, legal, or w=...,h=...", trimmed)),
-            };
+            let (w, h) = parse_paper_size(trimmed)
+                .map_err(|_| format!("Unknown page size: '{}'. Use letter, a4, legal, or w=...,h=...", trimmed))?;
+            return Ok(BlankPageSpec { width: w, height: h, count: 1 });
         }
 
         let mut w = None;
@@ -653,6 +659,243 @@ impl FromStr for DrawImageSpec {
             layer_over: layer.unwrap_or(true),
             alpha: alpha.unwrap_or(1.0),
             rotation: rotation.unwrap_or(0.0),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum Orientation {
+    #[default]
+    Auto,
+    Landscape,
+    Portrait,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum GridOrder {
+    #[default]
+    LeftToRightTopToBottom,
+    RightToLeftTopToBottom,
+    TopToBottomLeftToRight,
+    TopToBottomRightToLeft,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum DuplexFlip {
+    #[default]
+    None,
+    ShortEdge,
+    LongEdge,
+}
+
+fn auto_grid(n: u32) -> (u32, u32) {
+    match n {
+        2 => (1, 2),
+        4 => (2, 2),
+        6 => (2, 3),
+        8 => (2, 4),
+        9 => (3, 3),
+        16 => (4, 4),
+        _ => {
+            let cols = (n as f64).sqrt().ceil() as u32;
+            let rows = n.div_ceil(cols);
+            (cols, rows)
+        }
+    }
+}
+
+fn resolve_paper_dims(
+    paper: &Option<String>,
+    paper_w: Option<f32>,
+    paper_h: Option<f32>,
+    unit: Unit,
+    default: (f32, f32),
+) -> Result<(f32, f32), String> {
+    match (paper, paper_w, paper_h) {
+        (Some(name), None, None) => parse_paper_size(name),
+        (None, Some(w), Some(h)) => Ok((unit.to_points(w), unit.to_points(h))),
+        (None, None, None) => Ok(default),
+        (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
+            Err("Specify either 'paper' or both 'paper_w' and 'paper_h', not both".to_string())
+        }
+        (None, Some(_), None) | (None, None, Some(_)) => {
+            Err("Both 'paper_w' and 'paper_h' are required for custom paper size".to_string())
+        }
+    }
+}
+
+fn apply_orientation(w: f32, h: f32, orientation: Orientation, cols: u32, rows: u32) -> (f32, f32) {
+    let want_landscape = match orientation {
+        Orientation::Landscape => true,
+        Orientation::Portrait => false,
+        Orientation::Auto => cols > rows,
+    };
+    let needs_swap = (want_landscape && h > w) || (!want_landscape && w > h);
+    if needs_swap { (h, w) } else { (w, h) }
+}
+
+#[derive(Debug, Clone)]
+pub struct NupSpec {
+    pub cols: u32,
+    pub rows: u32,
+    pub paper_width: f32,
+    pub paper_height: f32,
+    pub margin: f32,
+    pub gutter: f32,
+    pub order: GridOrder,
+    pub border: bool,
+}
+
+impl FromStr for NupSpec {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut n = None;
+        let mut cols = None;
+        let mut rows = None;
+        let mut paper = None;
+        let mut paper_w = None;
+        let mut paper_h = None;
+        let mut orientation = None;
+        let mut margin = None;
+        let mut gutter = None;
+        let mut units = None;
+        let mut order = None;
+        let mut border = None;
+
+        for part in split_escaped_commas(s) {
+            let (key, value) = part.split_once('=')
+                .ok_or_else(|| format!("Invalid key-value pair: '{}'. Expected 'key=value'.", part))?;
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "n" => n = Some(value.parse::<u32>().map_err(|_| format!("Invalid n value: '{}'", value))?),
+                "cols" => cols = Some(value.parse::<u32>().map_err(|_| format!("Invalid cols value: '{}'", value))?),
+                "rows" => rows = Some(value.parse::<u32>().map_err(|_| format!("Invalid rows value: '{}'", value))?),
+                "paper" => paper = Some(value.to_string()),
+                "paper_w" => paper_w = Some(value.parse::<f32>().map_err(|_| format!("Invalid paper_w value: '{}'", value))?),
+                "paper_h" => paper_h = Some(value.parse::<f32>().map_err(|_| format!("Invalid paper_h value: '{}'", value))?),
+                "orientation" => orientation = Some(match value.to_lowercase().as_str() {
+                    "auto" => Orientation::Auto,
+                    "landscape" => Orientation::Landscape,
+                    "portrait" => Orientation::Portrait,
+                    _ => return Err(format!("Invalid orientation: '{}'. Use auto, landscape, or portrait.", value)),
+                }),
+                "margin" => margin = Some(value.parse::<f32>().map_err(|_| format!("Invalid margin value: '{}'", value))?),
+                "gutter" => gutter = Some(value.parse::<f32>().map_err(|_| format!("Invalid gutter value: '{}'", value))?),
+                "units" => units = Some(CliUnit::from_str(value, true).map_err(|e| e.to_string())?),
+                "order" => order = Some(match value.to_lowercase().as_str() {
+                    "lrtb" => GridOrder::LeftToRightTopToBottom,
+                    "rltb" => GridOrder::RightToLeftTopToBottom,
+                    "tblr" => GridOrder::TopToBottomLeftToRight,
+                    "tbrl" => GridOrder::TopToBottomRightToLeft,
+                    _ => return Err(format!("Invalid order: '{}'. Use lrtb, rltb, tblr, or tbrl.", value)),
+                }),
+                "border" => border = Some(value.parse::<bool>().map_err(|_| format!("Invalid border value: '{}'. Use true or false.", value))?),
+                _ => return Err(format!("Unknown nup key: '{}'", key)),
+            }
+        }
+
+        let (cols, rows) = match (n, cols, rows) {
+            (Some(n_val), None, None) => {
+                if n_val == 0 {
+                    return Err("n must be greater than 0".to_string());
+                }
+                auto_grid(n_val)
+            }
+            (None, Some(c), Some(r)) => {
+                if c == 0 || r == 0 {
+                    return Err("cols and rows must be greater than 0".to_string());
+                }
+                (c, r)
+            }
+            (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
+                return Err("Specify either 'n' or both 'cols' and 'rows', not both".to_string());
+            }
+            (None, Some(_), None) | (None, None, Some(_)) => {
+                return Err("Both 'cols' and 'rows' are required when not using 'n'".to_string());
+            }
+            (None, None, None) => {
+                return Err("Either 'n' or both 'cols' and 'rows' are required".to_string());
+            }
+        };
+
+        let unit: Unit = units.map(Unit::from).unwrap_or(Unit::In);
+
+        let (pw, ph) = resolve_paper_dims(&paper, paper_w, paper_h, unit, (612.0, 792.0))?;
+        let (pw, ph) = apply_orientation(pw, ph, orientation.unwrap_or_default(), cols, rows);
+
+        Ok(NupSpec {
+            cols,
+            rows,
+            paper_width: pw,
+            paper_height: ph,
+            margin: unit.to_points(margin.unwrap_or(0.0)),
+            gutter: unit.to_points(gutter.unwrap_or(0.0)),
+            order: order.unwrap_or_default(),
+            border: border.unwrap_or(false),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BookletSpec {
+    pub paper_width: f32,
+    pub paper_height: f32,
+    pub binding_margin: f32,
+    pub flip: DuplexFlip,
+}
+
+impl FromStr for BookletSpec {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.trim().is_empty() {
+            return Ok(BookletSpec {
+                paper_width: 792.0,
+                paper_height: 612.0,
+                binding_margin: 0.0,
+                flip: DuplexFlip::None,
+            });
+        }
+
+        let mut paper = None;
+        let mut paper_w = None;
+        let mut paper_h = None;
+        let mut binding_margin = None;
+        let mut units = None;
+        let mut flip = None;
+
+        for part in split_escaped_commas(s) {
+            let (key, value) = part.split_once('=')
+                .ok_or_else(|| format!("Invalid key-value pair: '{}'. Expected 'key=value'.", part))?;
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "paper" => paper = Some(value.to_string()),
+                "paper_w" => paper_w = Some(value.parse::<f32>().map_err(|_| format!("Invalid paper_w value: '{}'", value))?),
+                "paper_h" => paper_h = Some(value.parse::<f32>().map_err(|_| format!("Invalid paper_h value: '{}'", value))?),
+                "binding_margin" => binding_margin = Some(value.parse::<f32>().map_err(|_| format!("Invalid binding_margin value: '{}'", value))?),
+                "units" => units = Some(CliUnit::from_str(value, true).map_err(|e| e.to_string())?),
+                "flip" => flip = Some(match value.to_lowercase().as_str() {
+                    "none" => DuplexFlip::None,
+                    "short_edge" => DuplexFlip::ShortEdge,
+                    "long_edge" => DuplexFlip::LongEdge,
+                    _ => return Err(format!("Invalid flip value: '{}'. Use none, short_edge, or long_edge.", value)),
+                }),
+                _ => return Err(format!("Unknown booklet key: '{}'", key)),
+            }
+        }
+
+        let unit: Unit = units.map(Unit::from).unwrap_or(Unit::In);
+
+        let (pw, ph) = resolve_paper_dims(&paper, paper_w, paper_h, unit, (792.0, 612.0))?;
+        // For named paper sizes, ensure landscape orientation
+        let (pw, ph) = if paper.is_some() && ph > pw { (ph, pw) } else { (pw, ph) };
+
+        Ok(BookletSpec {
+            paper_width: pw,
+            paper_height: ph,
+            binding_margin: unit.to_points(binding_margin.unwrap_or(0.0)),
+            flip: flip.unwrap_or_default(),
         })
     }
 }
@@ -1686,5 +1929,199 @@ mod tests {
     fn test_watermark_spec_style_case_insensitive() {
         let spec = WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,style=ITALIC").unwrap();
         assert_eq!(spec.style, FontStyle::Italic);
+    }
+
+    // --- parse_paper_size ---
+
+    #[test]
+    fn test_parse_paper_size_letter() {
+        let (w, h) = parse_paper_size("letter").unwrap();
+        assert!((w - 612.0).abs() < f32::EPSILON);
+        assert!((h - 792.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_paper_size_a4() {
+        let (w, h) = parse_paper_size("A4").unwrap();
+        assert!((w - 595.28).abs() < 0.01);
+        assert!((h - 841.89).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_paper_size_legal() {
+        let (w, h) = parse_paper_size("Legal").unwrap();
+        assert!((w - 612.0).abs() < f32::EPSILON);
+        assert!((h - 1008.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_paper_size_unknown() {
+        assert!(parse_paper_size("tabloid").is_err());
+    }
+
+    // --- auto_grid ---
+
+    #[test]
+    fn test_auto_grid_known_values() {
+        assert_eq!(auto_grid(2), (1, 2));
+        assert_eq!(auto_grid(4), (2, 2));
+        assert_eq!(auto_grid(6), (2, 3));
+        assert_eq!(auto_grid(8), (2, 4));
+        assert_eq!(auto_grid(9), (3, 3));
+        assert_eq!(auto_grid(16), (4, 4));
+    }
+
+    #[test]
+    fn test_auto_grid_fallback() {
+        // 3 -> ceil(sqrt(3))=2 cols, ceil(3/2)=2 rows
+        assert_eq!(auto_grid(3), (2, 2));
+        // 5 -> ceil(sqrt(5))=3 cols, ceil(5/3)=2 rows
+        assert_eq!(auto_grid(5), (3, 2));
+        // 7 -> ceil(sqrt(7))=3 cols, ceil(7/3)=3 rows
+        assert_eq!(auto_grid(7), (3, 3));
+        // 1 -> ceil(sqrt(1))=1 cols, ceil(1/1)=1 rows
+        assert_eq!(auto_grid(1), (1, 1));
+    }
+
+    // --- NupSpec ---
+
+    #[test]
+    fn test_nup_spec_with_n() {
+        let spec = NupSpec::from_str("n=4").unwrap();
+        assert_eq!(spec.cols, 2);
+        assert_eq!(spec.rows, 2);
+        // Default paper = letter, auto orientation: cols==rows -> portrait
+        assert!((spec.paper_width - 612.0).abs() < f32::EPSILON);
+        assert!((spec.paper_height - 792.0).abs() < f32::EPSILON);
+        assert!(!spec.border);
+    }
+
+    #[test]
+    fn test_nup_spec_explicit_grid() {
+        let spec = NupSpec::from_str("cols=3,rows=2,paper=a4").unwrap();
+        assert_eq!(spec.cols, 3);
+        assert_eq!(spec.rows, 2);
+        // cols > rows -> auto selects landscape -> swap a4 dims
+        assert!((spec.paper_width - 841.89).abs() < 0.01);
+        assert!((spec.paper_height - 595.28).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_nup_spec_with_options() {
+        let spec = NupSpec::from_str("n=4,margin=0.5,gutter=0.25,units=in,border=true,order=rltb").unwrap();
+        assert!((spec.margin - 36.0).abs() < f32::EPSILON); // 0.5in = 36pt
+        assert!((spec.gutter - 18.0).abs() < f32::EPSILON); // 0.25in = 18pt
+        assert!(spec.border);
+        assert_eq!(spec.order, GridOrder::RightToLeftTopToBottom);
+    }
+
+    #[test]
+    fn test_nup_spec_portrait_orientation() {
+        let spec = NupSpec::from_str("n=4,orientation=portrait").unwrap();
+        assert!((spec.paper_width - 612.0).abs() < f32::EPSILON);
+        assert!((spec.paper_height - 792.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_nup_spec_landscape_orientation() {
+        let spec = NupSpec::from_str("n=4,orientation=landscape").unwrap();
+        assert!((spec.paper_width - 792.0).abs() < f32::EPSILON);
+        assert!((spec.paper_height - 612.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_nup_spec_custom_paper() {
+        let spec = NupSpec::from_str("n=2,paper_w=11,paper_h=17,units=in").unwrap();
+        assert!((spec.paper_width - 792.0).abs() < f32::EPSILON); // 11in
+        assert!((spec.paper_height - 1224.0).abs() < f32::EPSILON); // 17in
+    }
+
+    #[test]
+    fn test_nup_spec_missing_n_and_grid() {
+        assert!(NupSpec::from_str("paper=letter").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_n_and_cols_conflict() {
+        assert!(NupSpec::from_str("n=4,cols=2").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_cols_without_rows() {
+        assert!(NupSpec::from_str("cols=2").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_zero_n() {
+        assert!(NupSpec::from_str("n=0").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_unknown_key() {
+        assert!(NupSpec::from_str("n=4,bogus=val").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_paper_and_paper_w_conflict() {
+        assert!(NupSpec::from_str("n=4,paper=letter,paper_w=100").is_err());
+    }
+
+    #[test]
+    fn test_nup_spec_paper_w_without_paper_h() {
+        assert!(NupSpec::from_str("n=4,paper_w=100").is_err());
+    }
+
+    // --- BookletSpec ---
+
+    #[test]
+    fn test_booklet_spec_defaults() {
+        let spec = BookletSpec::from_str("").unwrap();
+        assert!((spec.paper_width - 792.0).abs() < f32::EPSILON); // letter landscape
+        assert!((spec.paper_height - 612.0).abs() < f32::EPSILON);
+        assert!((spec.binding_margin - 0.0).abs() < f32::EPSILON);
+        assert_eq!(spec.flip, DuplexFlip::None);
+    }
+
+    #[test]
+    fn test_booklet_spec_with_paper() {
+        let spec = BookletSpec::from_str("paper=a4").unwrap();
+        // a4 in landscape: 841.89 x 595.28
+        assert!((spec.paper_width - 841.89).abs() < 0.01);
+        assert!((spec.paper_height - 595.28).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_booklet_spec_with_options() {
+        let spec = BookletSpec::from_str("binding_margin=0.25,units=in,flip=short_edge").unwrap();
+        assert!((spec.binding_margin - 18.0).abs() < f32::EPSILON); // 0.25in = 18pt
+        assert_eq!(spec.flip, DuplexFlip::ShortEdge);
+    }
+
+    #[test]
+    fn test_booklet_spec_custom_paper() {
+        let spec = BookletSpec::from_str("paper_w=17,paper_h=11,units=in").unwrap();
+        assert!((spec.paper_width - 1224.0).abs() < f32::EPSILON);
+        assert!((spec.paper_height - 792.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_booklet_spec_flip_long_edge() {
+        let spec = BookletSpec::from_str("flip=long_edge").unwrap();
+        assert_eq!(spec.flip, DuplexFlip::LongEdge);
+    }
+
+    #[test]
+    fn test_booklet_spec_invalid_flip() {
+        assert!(BookletSpec::from_str("flip=invalid").is_err());
+    }
+
+    #[test]
+    fn test_booklet_spec_unknown_key() {
+        assert!(BookletSpec::from_str("bogus=val").is_err());
+    }
+
+    #[test]
+    fn test_booklet_spec_paper_and_paper_w_conflict() {
+        assert!(BookletSpec::from_str("paper=letter,paper_w=100").is_err());
     }
 }

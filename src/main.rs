@@ -3,13 +3,14 @@ use lopdf::{dictionary, Document, Object, Stream, StringFormat};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+mod imposition;
 mod spec_types;
 
 use medpdf::{parse_page_spec, AddTextParams, DrawRectParams, DrawLineParams, MedpdfError};
 use medpdf::{EncryptionAlgorithm, EncryptionParams};
 use medpdf::pdf_font::{find_font_with_style, FontCache};
 use medpdf_image::DrawImageParams;
-use spec_types::{WatermarkSpec, OverlaySpec, PadToSpec, PadFileSpec, DrawRectSpec, DrawLineSpec, DrawImageSpec, BlankPageSpec};
+use spec_types::{WatermarkSpec, OverlaySpec, PadToSpec, PadFileSpec, DrawRectSpec, DrawLineSpec, DrawImageSpec, BlankPageSpec, NupSpec, BookletSpec};
 
 
 /// A command-line tool for advanced manipulation of PDF documents.
@@ -36,6 +37,10 @@ struct Args {
     pad_to: Option<PadToSpec>,
     #[arg(long)]
     pad_last_page_file: Option<PadFileSpec>,
+    #[arg(long, conflicts_with = "booklet")]
+    nup: Option<NupSpec>,
+    #[arg(long, default_missing_value = "", num_args = 0..=1, conflicts_with = "nup")]
+    booklet: Option<BookletSpec>,
     #[arg(long, help = "Use traditional PDF format for maximum compatibility with older tools")]
     broad_compatibility: bool,
     #[arg(long, help = "Disable font subsetting (embed full font files)")]
@@ -71,7 +76,7 @@ fn format_xmp_metadata(doc_uuid: &str) -> String {
 <?xpacket end=\"w\"?>")
 }
 
-fn init_document() -> Document {
+pub(crate) fn init_document() -> Document {
     let mut doc = Document::with_version("1.7");
     let doc_uuid = Uuid::new_v4().to_string();
     let pages_id = doc.new_object_id();
@@ -320,7 +325,7 @@ fn save_document(
     encryption: Option<EncryptionParams>,
 ) -> Result<(), MedpdfError> {
     println!("\nSaving file to {}", output.display());
-    doc.change_producer("PDF Merger Command-Line Tool");
+    doc.change_producer("pdf-maker");
     doc.compress();
     if let Some(params) = &encryption {
         println!("Encrypting with {:?}...", params.algorithm);
@@ -346,6 +351,15 @@ fn main() -> Result<(), MedpdfError> {
     let mut page_ids = Vec::new();
 
     merge_pages(&mut doc, &mut page_ids, &args.inputs, &args.blank_page)?;
+
+    if let Some(ref nup) = args.nup {
+        println!("\n--- Applying N-Up Imposition ---");
+        imposition::apply_nup(&mut doc, &mut page_ids, nup)?;
+    } else if let Some(ref booklet) = args.booklet {
+        println!("\n--- Applying Booklet Imposition ---");
+        imposition::apply_booklet(&mut doc, &mut page_ids, booklet)?;
+    }
+
     apply_overlays(&mut doc, &page_ids, &args.overlay)?;
     let font_object_cache = apply_drawing_commands(&mut doc, &page_ids, &args.draw_rect, &args.draw_line, &args.draw_image, &args.watermark)?;
     if !args.no_subset {
