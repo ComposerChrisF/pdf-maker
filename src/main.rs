@@ -1,6 +1,6 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use lopdf::{dictionary, Document, Object, Stream, StringFormat};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 mod imposition;
@@ -50,9 +50,29 @@ struct Args {
     #[arg(long, help = "Password required to change permissions/restrictions")]
     owner_password: Option<String>,
     #[arg(long, default_value = "aes128", help = "Encryption algorithm: aes256, aes128, rc4")]
-    encryption_algorithm: String,
+    encryption_algorithm: EncryptionAlgo,
     #[arg(long, value_delimiter = ',', help = "Comma-separated permissions: print,modify,copy,annotate,fill,accessibility,assemble,print_hq,all,none")]
     permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum EncryptionAlgo {
+    #[value(alias = "aes-256")]
+    Aes256,
+    #[value(alias = "aes-128")]
+    Aes128,
+    #[value(alias = "rc4-128", alias = "rc4_128")]
+    Rc4,
+}
+
+impl From<EncryptionAlgo> for EncryptionAlgorithm {
+    fn from(algo: EncryptionAlgo) -> Self {
+        match algo {
+            EncryptionAlgo::Aes256 => EncryptionAlgorithm::Aes256,
+            EncryptionAlgo::Aes128 => EncryptionAlgorithm::Aes128,
+            EncryptionAlgo::Rc4 => EncryptionAlgorithm::Rc4_128,
+        }
+    }
 }
 
 fn format_xmp_metadata(doc_uuid: &str) -> String {
@@ -116,26 +136,26 @@ fn merge_pages(
     inputs: &[String],
     blank_pages: &[BlankPageSpec],
 ) -> Result<(), MedpdfError> {
-    println!("\n--- Merging Pages ---");
-    for input_chunk in inputs.chunks(2) {
+    eprintln!("\n--- Merging Pages ---");
+    for input_chunk in inputs.chunks_exact(2) {
         let source_path = &input_chunk[0];
         let page_spec = &input_chunk[1];
-        println!("Processing '{}' with pages '{}'...", source_path, page_spec);
+        eprintln!("Processing '{}' with pages '{}'...", source_path, page_spec);
         let source_doc = Document::load(source_path)?;
         let source_page_count = source_doc.page_iter().count();
         let page_numbers_to_import = parse_page_spec(page_spec, source_page_count as u32)?;
-        println!("page_numbers_to_import: {page_numbers_to_import:?}; source_page_count: {source_page_count}");
+        eprintln!("page_numbers_to_import: {page_numbers_to_import:?}; source_page_count: {source_page_count}");
 
         let mut copy_cache = std::collections::BTreeMap::new();
         for page_num in page_numbers_to_import {
-            println!("Copying page: {page_num} from {source_path}");
+            eprintln!("Copying page: {page_num} from {source_path}");
             let new_page_id = medpdf::copy_page_with_cache(doc, &source_doc, page_num, &mut copy_cache)?;
             page_ids.push(new_page_id);
         }
     }
 
     for spec in blank_pages {
-        println!("Adding {} blank page(s) ({}x{} pt)", spec.count, spec.width, spec.height);
+        eprintln!("Adding {} blank page(s) ({}x{} pt)", spec.count, spec.width, spec.height);
         for _ in 0..spec.count {
             let page_id = medpdf::create_blank_page(doc, spec.width, spec.height)?;
             page_ids.push(page_id);
@@ -153,9 +173,9 @@ fn apply_overlays(
     page_ids: &[lopdf::ObjectId],
     overlays: &[OverlaySpec],
 ) -> Result<(), MedpdfError> {
-    println!("\n--- Applying Overlays ---");
+    eprintln!("\n--- Applying Overlays ---");
     for spec in overlays {
-        println!("Applying overlay from {}", spec.file.display());
+        eprintln!("Applying overlay from {}", spec.file.display());
         let overlay_doc = Document::load(&spec.file)?;
         let target_page_indices = parse_page_spec(&spec.target_pages, page_ids.len() as u32)?;
         for page_index in target_page_indices {
@@ -175,7 +195,7 @@ fn apply_drawing_commands(
     images: &[DrawImageSpec],
     watermarks: &[WatermarkSpec],
 ) -> Result<medpdf::EmbeddedFontCache, MedpdfError> {
-    println!("\n--- Applying Drawing Commands ---");
+    eprintln!("\n--- Applying Drawing Commands ---");
     let mut font_cache = FontCache::new();
     let mut font_object_cache = medpdf::EmbeddedFontCache::new();
     let num_pages = page_ids.len() as u32;
@@ -188,7 +208,7 @@ fn apply_drawing_commands(
             let params = DrawRectParams::new(spec.x, spec.y, spec.w, spec.h)
                 .color(spec.color)
                 .layer_over(layer_over);
-            println!("Drawing rect ({layer_name}) to pages '{target_page_indices:?}'");
+            eprintln!("Drawing rect ({layer_name}) to pages '{target_page_indices:?}'");
             for page_index in target_page_indices {
                 let page_id = *page_ids.get((page_index - 1) as usize)
                     .ok_or_else(|| MedpdfError::new(format!("draw-rect target page index {} out of range", page_index)))?;
@@ -202,7 +222,7 @@ fn apply_drawing_commands(
                 .line_width(spec.width)
                 .color(spec.color)
                 .layer_over(layer_over);
-            println!("Drawing line ({layer_name}) to pages '{target_page_indices:?}'");
+            eprintln!("Drawing line ({layer_name}) to pages '{target_page_indices:?}'");
             for page_index in target_page_indices {
                 let page_id = *page_ids.get((page_index - 1) as usize)
                     .ok_or_else(|| MedpdfError::new(format!("draw-line target page index {} out of range", page_index)))?;
@@ -220,10 +240,10 @@ fn apply_drawing_commands(
                 (Some(w), Some(h)) => (w, h),
                 (Some(w), None) => (w, w * (img_h / img_w)),
                 (None, Some(h)) => (h * (img_w / img_h), h),
-                (None, None) => unreachable!("validated in FromStr"),
+                (None, None) => return Err(MedpdfError::new("draw-image requires at least one of 'w' or 'h'")),
             };
 
-            println!("Drawing image ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.file.display());
+            eprintln!("Drawing image ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.file.display());
             for page_index in &target_page_indices {
                 let page_id = *page_ids.get((*page_index - 1) as usize)
                     .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", page_index)))?;
@@ -256,7 +276,7 @@ fn apply_drawing_commands(
                 .strikeout(spec.strikeout)
                 .underline(spec.underline);
 
-            println!("Applying watermark ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.text);
+            eprintln!("Applying watermark ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.text);
             for page_index in target_page_indices {
                 let page_id = *page_ids.get((page_index - 1) as usize)
                     .ok_or_else(|| MedpdfError::new(format!("Watermark target page index {} out of range", page_index)))?;
@@ -273,7 +293,7 @@ fn apply_padding(
     pad_to: &Option<PadToSpec>,
     pad_file: &Option<PadFileSpec>,
 ) -> Result<(), MedpdfError> {
-    println!("\n--- Checking for Padding ---");
+    eprintln!("\n--- Checking for Padding ---");
     let current_page_count = doc.get_pages().len();
 
     if let Some(spec) = pad_to {
@@ -281,7 +301,7 @@ fn apply_padding(
         if current_page_count > 0 {
             let pages_to_add = (pages - (current_page_count % pages)) % pages;
             if pages_to_add > 0 {
-                println!("   -> Padding with {pages_to_add} page(s) to reach a multiple of {pages}.");
+                eprintln!("   -> Padding with {pages_to_add} page(s) to reach a multiple of {pages}.");
                 let last_page_id = *page_ids.last()
                     .ok_or_else(|| MedpdfError::new("No pages in document to pad"))?;
                 let media_box = medpdf::get_page_media_box(doc, last_page_id)
@@ -307,28 +327,17 @@ fn apply_padding(
     Ok(())
 }
 
-fn parse_encryption_algorithm(s: &str) -> Result<EncryptionAlgorithm, MedpdfError> {
-    match s.to_ascii_lowercase().as_str() {
-        "aes256" | "aes-256" => Ok(EncryptionAlgorithm::Aes256),
-        "aes128" | "aes-128" => Ok(EncryptionAlgorithm::Aes128),
-        "rc4" | "rc4-128" | "rc4_128" => Ok(EncryptionAlgorithm::Rc4_128),
-        _ => Err(MedpdfError::new(format!(
-            "Unknown encryption algorithm: '{s}'. Valid values: aes256, aes128, rc4"
-        ))),
-    }
-}
-
 fn save_document(
     doc: &mut Document,
-    output: &PathBuf,
+    output: &Path,
     broad_compat: bool,
     encryption: Option<EncryptionParams>,
 ) -> Result<(), MedpdfError> {
-    println!("\nSaving file to {}", output.display());
+    eprintln!("\nSaving file to {}", output.display());
     doc.change_producer("pdf-maker");
     doc.compress();
     if let Some(params) = &encryption {
-        println!("Encrypting with {:?}...", params.algorithm);
+        eprintln!("Encrypting with {:?}...", params.algorithm);
         medpdf::encrypt_document(doc, params)?;
     }
     if broad_compat {
@@ -353,10 +362,10 @@ fn main() -> Result<(), MedpdfError> {
     merge_pages(&mut doc, &mut page_ids, &args.inputs, &args.blank_page)?;
 
     if let Some(ref nup) = args.nup {
-        println!("\n--- Applying N-Up Imposition ---");
+        eprintln!("\n--- Applying N-Up Imposition ---");
         imposition::apply_nup(&mut doc, &mut page_ids, nup)?;
     } else if let Some(ref booklet) = args.booklet {
-        println!("\n--- Applying Booklet Imposition ---");
+        eprintln!("\n--- Applying Booklet Imposition ---");
         imposition::apply_booklet(&mut doc, &mut page_ids, booklet)?;
     }
 
@@ -368,29 +377,19 @@ fn main() -> Result<(), MedpdfError> {
     apply_padding(&mut doc, &mut page_ids, &args.pad_to, &args.pad_last_page_file)?;
 
     let encryption = match (&args.user_password, &args.owner_password) {
-        (Some(user), Some(owner)) => {
-            let algo = parse_encryption_algorithm(&args.encryption_algorithm)?;
+        (None, None) => None,
+        _ => {
+            let user = args.user_password.as_deref().unwrap_or("");
+            let owner = args.owner_password.as_deref().unwrap_or(user);
+            let algo = EncryptionAlgorithm::from(args.encryption_algorithm);
             let perms = medpdf::parse_permissions(&args.permissions)
                 .map_err(MedpdfError::new)?;
             Some(EncryptionParams::new(user, owner).algorithm(algo).permissions(perms))
         }
-        (Some(user), None) => {
-            let algo = parse_encryption_algorithm(&args.encryption_algorithm)?;
-            let perms = medpdf::parse_permissions(&args.permissions)
-                .map_err(MedpdfError::new)?;
-            Some(EncryptionParams::new(user, user).algorithm(algo).permissions(perms))
-        }
-        (None, Some(owner)) => {
-            let algo = parse_encryption_algorithm(&args.encryption_algorithm)?;
-            let perms = medpdf::parse_permissions(&args.permissions)
-                .map_err(MedpdfError::new)?;
-            Some(EncryptionParams::new("", owner).algorithm(algo).permissions(perms))
-        }
-        (None, None) => None,
     };
 
     save_document(&mut doc, &args.output, args.broad_compatibility, encryption)?;
 
-    println!("Operation successful!");
+    eprintln!("Operation successful!");
     Ok(())
 }
