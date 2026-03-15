@@ -863,6 +863,7 @@ pub struct BookletSpec {
     pub paper_height: f32,
     pub binding_margin: f32,
     pub flip: DuplexFlip,
+    pub back: u32,
 }
 
 impl FromStr for BookletSpec {
@@ -874,6 +875,7 @@ impl FromStr for BookletSpec {
                 paper_height: 612.0,
                 binding_margin: 0.0,
                 flip: DuplexFlip::None,
+                back: 0,
             });
         }
 
@@ -883,6 +885,7 @@ impl FromStr for BookletSpec {
         let mut binding_margin = None;
         let mut units = None;
         let mut flip = None;
+        let mut back = None;
 
         for part in split_escaped_commas(s) {
             let (key, value) = part.split_once('=')
@@ -901,6 +904,7 @@ impl FromStr for BookletSpec {
                     "long_edge" => DuplexFlip::LongEdge,
                     _ => return Err(format!("Invalid flip value: '{}'. Use none, short_edge, or long_edge.", value)),
                 }),
+                "back" => back = Some(value.parse::<u32>().map_err(|_| format!("Invalid back value: '{}'. Must be a non-negative integer.", value))?),
                 _ => return Err(format!("Unknown booklet key: '{}'", key)),
             }
         }
@@ -916,6 +920,7 @@ impl FromStr for BookletSpec {
             paper_height: ph,
             binding_margin: unit.to_points(binding_margin.unwrap_or(0.0)),
             flip: flip.unwrap_or_default(),
+            back: back.unwrap_or(0),
         })
     }
 }
@@ -2172,5 +2177,29 @@ mod tests {
     #[test]
     fn test_booklet_spec_paper_and_paper_w_conflict() {
         assert!(BookletSpec::from_str("paper=letter,paper_w=100").is_err());
+    }
+
+    #[test]
+    fn test_booklet_spec_back_default() {
+        let spec = BookletSpec::from_str("").unwrap();
+        assert_eq!(spec.back, 0);
+    }
+
+    #[test]
+    fn test_booklet_spec_with_back() {
+        let spec = BookletSpec::from_str("back=3").unwrap();
+        assert_eq!(spec.back, 3);
+    }
+
+    #[test]
+    fn test_booklet_spec_back_invalid() {
+        assert!(BookletSpec::from_str("back=abc").is_err());
+    }
+
+    #[test]
+    fn test_booklet_spec_back_with_other_options() {
+        let spec = BookletSpec::from_str("back=2,flip=short_edge").unwrap();
+        assert_eq!(spec.back, 2);
+        assert_eq!(spec.flip, DuplexFlip::ShortEdge);
     }
 }

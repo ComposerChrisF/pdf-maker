@@ -165,7 +165,19 @@ pub fn apply_booklet(
         })
         .collect();
 
-    let pairs = booklet_page_order(num_pages);
+    if spec.back >= num_pages {
+        return Err(MedpdfError::new(format!(
+            "back={} must be less than total page count ({})",
+            spec.back, num_pages
+        )));
+    }
+
+    let pairs = if spec.back > 0 {
+        let mapping = build_virtual_mapping(num_pages, spec.back);
+        booklet_page_order_mapped(&mapping)
+    } else {
+        booklet_page_order(num_pages)
+    };
 
     let mut sheets = Vec::new();
     for (pair_idx, pair) in pairs.iter().enumerate() {
@@ -265,6 +277,41 @@ fn grid_position(index: u32, cols: u32, rows: u32, order: GridOrder) -> (u32, u3
         GridOrder::TopToBottomLeftToRight => (index % rows, index / rows),
         GridOrder::TopToBottomRightToLeft => (index % rows, (cols - 1) - (index / rows)),
     }
+}
+
+fn build_virtual_mapping(page_count: u32, back: u32) -> Vec<u32> {
+    let front = page_count - back;
+    let total = page_count.div_ceil(4) * 4;
+    let blanks = total - page_count;
+    (1..=front)
+        .chain(std::iter::repeat_n(0u32, blanks as usize))
+        .chain((front + 1)..=page_count)
+        .collect()
+}
+
+fn booklet_page_order_mapped(mapping: &[u32]) -> Vec<[u32; 2]> {
+    let total = mapping.len() as u32;
+    debug_assert!(total.is_multiple_of(4));
+    let num_sheets = total / 4;
+    let mut pairs = Vec::with_capacity((num_sheets * 2) as usize);
+
+    for s in 0..num_sheets {
+        let front_left = total - 2 * s;
+        let front_right = 2 * s + 1;
+        pairs.push([
+            mapping[(front_left - 1) as usize],
+            mapping[(front_right - 1) as usize],
+        ]);
+
+        let back_left = 2 * s + 2;
+        let back_right = total - 2 * s - 1;
+        pairs.push([
+            mapping[(back_left - 1) as usize],
+            mapping[(back_right - 1) as usize],
+        ]);
+    }
+
+    pairs
 }
 
 fn booklet_page_order(page_count: u32) -> Vec<[u32; 2]> {
@@ -380,5 +427,47 @@ mod tests {
         assert_eq!(pairs[3], [4, 9]);
         assert_eq!(pairs[4], [8, 5]);
         assert_eq!(pairs[5], [6, 7]);
+    }
+
+    #[test]
+    fn test_build_virtual_mapping_basic() {
+        // 6 pages, back=2 → [1,2,3,4,0,0,5,6]
+        let mapping = build_virtual_mapping(6, 2);
+        assert_eq!(mapping, vec![1, 2, 3, 4, 0, 0, 5, 6]);
+    }
+
+    #[test]
+    fn test_build_virtual_mapping_no_padding() {
+        // 8 pages, back=4 → already multiple of 4, no blanks
+        let mapping = build_virtual_mapping(8, 4);
+        assert_eq!(mapping, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_build_virtual_mapping_back_1() {
+        // 5 pages, back=1 → pads to 8: [1,2,3,4,0,0,0,5]
+        let mapping = build_virtual_mapping(5, 1);
+        assert_eq!(mapping, vec![1, 2, 3, 4, 0, 0, 0, 5]);
+    }
+
+    #[test]
+    fn test_booklet_page_order_mapped_6_back2() {
+        // mapping [1,2,3,4,0,0,5,6] → standard booklet on 8 virtual pages
+        let mapping = build_virtual_mapping(6, 2);
+        let pairs = booklet_page_order_mapped(&mapping);
+        assert_eq!(pairs.len(), 4);
+        assert_eq!(pairs[0], [6, 1]); // virtual 8→6, virtual 1→1
+        assert_eq!(pairs[1], [2, 5]); // virtual 2→2, virtual 7→5
+        assert_eq!(pairs[2], [0, 3]); // virtual 6→0, virtual 3→3
+        assert_eq!(pairs[3], [4, 0]); // virtual 4→4, virtual 5→0
+    }
+
+    #[test]
+    fn test_booklet_page_order_mapped_identity() {
+        // mapping [1,2,3,4] should match booklet_page_order(4)
+        let mapping = vec![1, 2, 3, 4];
+        let mapped = booklet_page_order_mapped(&mapping);
+        let direct = booklet_page_order(4);
+        assert_eq!(mapped, direct);
     }
 }
