@@ -340,7 +340,7 @@ fn save_document(
         eprintln!("Encrypting with {:?}...", params.algorithm);
         medpdf::encrypt_document(doc, params)?;
     }
-    if broad_compat {
+    if broad_compat || encryption.is_some() {
         doc.save(output)?;
     } else {
         let mut file = std::fs::File::create(output)?;

@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "medpdf-image"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "flate2",
  "image",
@@ -1530,7 +1530,7 @@ dependencies = [
 
 [[package]]
 name = "pdf-maker"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "chrono",
  "clap",
@@ -1538,6 +1538,7 @@ dependencies = [
  "lopdf",
  "medpdf",
  "medpdf-image",
+ "serde_json",
  "tempfile",
  "uuid",
 ]
