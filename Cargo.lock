@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "medpdf"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "allsorts",
  "font-kit",
@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "medpdf-image"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "flate2",
  "image",

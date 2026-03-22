@@ -21,9 +21,12 @@ pdf-maker/                    # Repository root
 ├── Cargo.toml                 # Crate manifest
 ├── src/
 │   ├── main.rs                # CLI args (clap), orchestrates pipeline
+│   ├── imposition.rs          # N-up and booklet layout
 │   └── spec_types.rs          # CLI spec types with FromStr (WatermarkSpec, etc.)
 └── tests/
-    └── spec_types_tests.rs    # Integration tests (stub)
+    ├── cli_tests.rs              # CLI integration tests
+    ├── lopdf_save_modern_bug.rs  # Sentinel test for lopdf encryption bug
+    └── spec_types_tests.rs       # (stub — unit tests live in src/spec_types.rs)
 ```
 
 ### Dependencies
@@ -48,7 +51,8 @@ pdf-maker/                    # Repository root
 | Module | Purpose |
 |--------|---------|
 | `main` | CLI args (clap), orchestrates pipeline |
-| `spec_types` | CLI spec types with FromStr for clap integration: `WatermarkSpec`, `OverlaySpec`, `PadToSpec`, `PadFileSpec`, `DrawRectSpec`, `DrawLineSpec`, `DrawImageSpec`, `BlankPageSpec` |
+| `spec_types` | CLI spec types with FromStr for clap integration: `WatermarkSpec`, `OverlaySpec`, `PadToSpec`, `PadFileSpec`, `DrawRectSpec`, `DrawLineSpec`, `DrawImageSpec`, `BlankPageSpec`, `NupSpec`, `BookletSpec` |
+| `imposition` | N-up and booklet layout engine: page placement, scaling, and sheet generation |
 
 ### CLI Usage
 

@@ -57,10 +57,10 @@ Add text watermarks on top of page content:
 --watermark "text=DRAFT,font=@Helvetica,size=48,x=1,y=1,units=in,pages=all"
 ```
 
-Add watermarks behind page content:
+Add watermarks behind page content using `layer=under`:
 
 ```bash
---watermark-under "text=CONFIDENTIAL,font=@Courier,size=36,x=0.5,y=0.5,units=in"
+--watermark "text=CONFIDENTIAL,font=@Courier,size=36,x=0.5,y=0.5,units=in,layer=under"
 ```
 
 **Watermark parameters:**
@@ -168,7 +168,7 @@ pdf-maker -o final.pdf \
   appendix.pdf "5-" \
   --overlay "file=template.pdf,src_page=1,target_pages=1" \
   --watermark "text=v1.0,font=@Courier,size=12,x=0.5,y=0.25,units=in,pages=1" \
-  --watermark-under "text=CONFIDENTIAL,font=@Helvetica,size=48,x=3,y=5,units=in,pages=2-" \
+  --watermark "text=CONFIDENTIAL,font=@Helvetica,size=48,x=3,y=5,units=in,pages=2-,layer=under" \
   --pad-to 4
 ```
 
@@ -178,7 +178,7 @@ The tool processes PDFs in five phases:
 
 1. **Merge** - Copy selected pages from input files
 2. **Overlay** - Apply PDF overlays with resource deduplication
-3. **Watermark** - Add text watermarks (under first, then over)
+3. **Draw** - Add watermarks, rectangles, lines, and images (under layer first, then over)
 4. **Pad** - Add blank pages to reach target multiple
 5. **Save** - Compress and write output
 

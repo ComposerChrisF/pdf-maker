@@ -954,6 +954,7 @@ mod tests {
         assert!((spec.size - 24.0).abs() < f32::EPSILON);
         assert!((spec.x - 2.0).abs() < f32::EPSILON);
         assert!((spec.y - 3.0).abs() < f32::EPSILON);
+        assert_eq!(spec.units, Unit::Mm);
         assert_eq!(spec.pages, "1-3");
         assert!((spec.color.r - 1.0).abs() < f32::EPSILON);
         assert!((spec.color.a - 0.5).abs() < f32::EPSILON);
@@ -2201,5 +2202,48 @@ mod tests {
         let spec = BookletSpec::from_str("back=2,flip=short_edge").unwrap();
         assert_eq!(spec.back, 2);
         assert_eq!(spec.flip, DuplexFlip::ShortEdge);
+    }
+
+    // --- Missing coverage: extra_light weight variants (#8) ---
+
+    #[test]
+    fn test_watermark_spec_weight_extra_light_variants() {
+        let spec1 = WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,weight=extra_light").unwrap();
+        assert_eq!(spec1.weight, FontWeight::EXTRA_LIGHT);
+        let spec2 = WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,weight=extralight").unwrap();
+        assert_eq!(spec2.weight, FontWeight::EXTRA_LIGHT);
+    }
+
+    // --- Missing coverage: NupSpec invalid orientation (#6) ---
+
+    #[test]
+    fn test_nup_spec_invalid_orientation() {
+        let result = NupSpec::from_str("n=4,orientation=bogus");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("orientation"));
+    }
+
+    // --- Missing coverage: BookletSpec paper_w without paper_h (#7) ---
+
+    #[test]
+    fn test_booklet_spec_paper_w_without_paper_h() {
+        assert!(BookletSpec::from_str("paper_w=100").is_err());
+    }
+
+    // --- Missing coverage: units=cm (#11) ---
+
+    #[test]
+    fn test_watermark_spec_units_cm() {
+        let spec = WatermarkSpec::from_str("text=X,font=@H,x=1,y=1,units=cm").unwrap();
+        assert_eq!(spec.units, Unit::Cm);
+    }
+
+    #[test]
+    fn test_draw_rect_spec_units_cm() {
+        // 1cm = 72/2.54 ≈ 28.3465 pt
+        let spec = DrawRectSpec::from_str("x=1,y=1,w=1,h=1,units=cm").unwrap();
+        let expected_pt = 72.0 / 2.54;
+        assert!((spec.x - expected_pt as f32).abs() < 0.01);
+        assert!((spec.y - expected_pt as f32).abs() < 0.01);
     }
 }
