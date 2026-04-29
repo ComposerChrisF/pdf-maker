@@ -13,33 +13,81 @@ use medpdf_image::DrawImageParams;
 use spec_types::{WatermarkSpec, OverlaySpec, PadToSpec, PadFileSpec, DrawRectSpec, DrawLineSpec, DrawImageSpec, BlankPageSpec, NupSpec, BookletSpec};
 
 
+const EXIT_STATUS_HELP: &str = "EXIT STATUS:
+    0  Success.
+    1  Operation failed (I/O error, malformed input PDF, encryption error,
+       page index out of range, invalid spec). Diagnostic on stderr.
+    2  Invalid command-line arguments (clap parse error).
+";
+
 /// A command-line tool for advanced manipulation of PDF documents.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, after_long_help = EXIT_STATUS_HELP)]
 struct Args {
-    #[arg(short, long)]
+    #[arg(short, long, help = "Output PDF path")]
     output: PathBuf,
-    #[arg(num_args = 2.., value_name = "FILE \"PAGES\"")]
+    #[arg(
+        num_args = 2..,
+        value_name = "FILE \"PAGES\"",
+        help = "Input PDF and page spec, repeated. PAGES grammar: 'all', 'N', 'N-M', 'N-', '-M', or comma list (e.g. '1-3,5,8-10')."
+    )]
     inputs: Vec<String>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Insert a blank page. Spec: '<named-size>' (e.g. 'letter', 'a4') or 'w=N,h=N[,units=in|pt|mm|cm][,count=N]'"
+    )]
     blank_page: Vec<BlankPageSpec>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Add text watermark. Spec keys: text, font, x, y (required); size, units, pages, color, alpha, rotation, h_align, v_align, layer, strikeout, underline, weight, style"
+    )]
     watermark: Vec<WatermarkSpec>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Draw a rectangle. Spec keys: x, y, w, h (required); color, alpha, pages, units, layer"
+    )]
     draw_rect: Vec<DrawRectSpec>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Draw a line. Spec keys: x1, y1, x2, y2 (required); width, color, alpha, pages, units, layer"
+    )]
     draw_line: Vec<DrawLineSpec>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Draw an image. Spec keys: file, x, y plus w or h (required); fit, max_dpi, pages, units, layer, alpha, rotation"
+    )]
     draw_image: Vec<DrawImageSpec>,
-    #[arg(long, action = clap::ArgAction::Append)]
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Overlay one PDF page onto target pages. Spec keys: file, src_page (required); target_pages"
+    )]
     overlay: Vec<OverlaySpec>,
-    #[arg(long)]
+    #[arg(long, help = "Pad output to a multiple of N pages with blank pages")]
     pad_to: Option<PadToSpec>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Use a specific PDF page as the padding template. Spec keys: file, page"
+    )]
     pad_last_page_file: Option<PadFileSpec>,
-    #[arg(long, conflicts_with = "booklet")]
+    #[arg(
+        long,
+        conflicts_with = "booklet",
+        help = "N-up imposition (multiple input pages per output sheet). Conflicts with --booklet"
+    )]
     nup: Option<NupSpec>,
-    #[arg(long, default_missing_value = "", num_args = 0..=1, conflicts_with = "nup")]
+    #[arg(
+        long,
+        default_missing_value = "",
+        num_args = 0..=1,
+        conflicts_with = "nup",
+        help = "Booklet imposition for saddle-stitched printing; pass with no value for defaults. Spec keys: paper, orientation, duplex_flip, back, etc. Conflicts with --nup"
+    )]
     booklet: Option<BookletSpec>,
     #[arg(long, help = "Use traditional PDF format for maximum compatibility with older tools")]
     broad_compatibility: bool,
@@ -244,16 +292,23 @@ fn apply_drawing_commands(
             };
 
             eprintln!("Drawing image ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.file.display());
-            for page_index in &target_page_indices {
-                let page_id = *page_ids.get((*page_index - 1) as usize)
-                    .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", page_index)))?;
-                let params = DrawImageParams::new(image_data.clone(), spec.x, spec.y, out_w, out_h)
+            let build_params = |img| {
+                DrawImageParams::new(img, spec.x, spec.y, out_w, out_h)
                     .fit(spec.fit)
                     .max_dpi(spec.max_dpi)
                     .alpha(spec.alpha)
                     .rotation(spec.rotation)
-                    .layer_over(layer_over);
-                medpdf_image::add_image(doc, page_id, params)?;
+                    .layer_over(layer_over)
+            };
+            if let Some((last_idx, rest)) = target_page_indices.split_last() {
+                for page_index in rest {
+                    let page_id = *page_ids.get((*page_index - 1) as usize)
+                        .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", page_index)))?;
+                    medpdf_image::add_image(doc, page_id, build_params(image_data.clone()))?;
+                }
+                let page_id = *page_ids.get((*last_idx - 1) as usize)
+                    .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", last_idx)))?;
+                medpdf_image::add_image(doc, page_id, build_params(image_data))?;
             }
         }
 
@@ -349,7 +404,14 @@ fn save_document(
     Ok(())
 }
 
-fn main() -> Result<(), MedpdfError> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), MedpdfError> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let args = Args::parse();
     if !args.inputs.is_empty() && args.inputs.len() % 2 != 0 {

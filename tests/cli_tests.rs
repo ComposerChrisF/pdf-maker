@@ -52,6 +52,7 @@ fn create_test_pdf(path: &Path, num_pages: u32) {
                 Object::Real(0.0), Object::Real(0.0),
                 Object::Real(612.0), Object::Real(792.0),
             ],
+            "Resources" => dictionary! {},
             "Contents" => Object::Reference(content_id),
         };
         let page_id = doc.add_object(page);
@@ -327,4 +328,184 @@ fn cli_broad_compatibility() {
     let page_count = pdf_dump_page_count(output.path())
         .expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 1);
+}
+
+// --- Drawing / overlay / imposition coverage (N6) ---
+
+/// Minimal 1×1 red RGB PNG for --draw-image tests.
+const RED_PIXEL_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+    0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54,
+    0x08, 0x99, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01,
+    0xE3, 0xCE, 0xC5, 0x0E,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
+    0xAE, 0x42, 0x60, 0x82,
+];
+
+fn write_test_png(path: &Path) {
+    std::fs::write(path, RED_PIXEL_PNG).unwrap();
+}
+
+#[test]
+fn cli_blank_page_custom_dimensions() {
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            "--blank-page", "w=8.5,h=11,units=in,count=3",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 3);
+}
+
+#[test]
+fn cli_watermark_applied() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--watermark",
+            "text=DRAFT,font=@Helvetica,size=24,x=1,y=1,units=in,color=red,alpha=0.4,h_align=center,v_align=center,pages=all",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 2);
+}
+
+#[test]
+fn cli_draw_rect_applied() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--draw-rect", "x=72,y=72,w=200,h=100,color=blue,alpha=0.5,pages=all",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 2);
+}
+
+#[test]
+fn cli_draw_line_applied() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--draw-line", "x1=72,y1=720,x2=540,y2=720,width=1.5,color=#444,pages=1",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 1);
+}
+
+#[test]
+fn cli_draw_image_applied() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let img = tempfile::Builder::new()
+        .suffix(".png")
+        .tempfile()
+        .unwrap();
+    write_test_png(img.path());
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--draw-image",
+            &format!("file={},x=1,y=1,w=2,units=in,fit=contain,pages=all", img.path().display()),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 2);
+}
+
+#[test]
+fn cli_overlay_applied() {
+    let base = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(base.path(), 3);
+    let overlay = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(overlay.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            base.path().to_str().unwrap(), "all",
+            "--overlay",
+            &format!("file={},src_page=1,target_pages=1-3", overlay.path().display()),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 3);
+}
+
+#[test]
+fn cli_nup_2x2() {
+    // 8 input pages with cells_per_sheet = 4 → 2 output sheets.
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 8);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--nup", "cols=2,rows=2",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 2);
+}
+
+#[test]
+fn cli_booklet_default() {
+    // 4 input pages → 2 booklet sheets (front + back).
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o", output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(), "all",
+            "--booklet",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let page_count = pdf_dump_page_count(output.path())
+        .expect("pdf-dump must be on PATH");
+    assert_eq!(page_count, 2);
 }

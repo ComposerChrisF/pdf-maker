@@ -47,13 +47,16 @@ pub fn apply_nup(
         .iter()
         .enumerate()
         .map(|(i, &id)| {
-            let mb = medpdf::get_page_media_box(doc, id).unwrap_or_else(|| {
-                eprintln!("Warning: could not read MediaBox for page {}, assuming letter size", i + 1);
-                [0.0, 0.0, 612.0, 792.0]
-            });
-            [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64]
+            medpdf::get_page_media_box(doc, id)
+                .map(|mb| [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64])
+                .ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "Could not read MediaBox for page {}; aborting N-up imposition",
+                        i + 1
+                    ))
+                })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Build expanded page list when repeat > 1
     let expanded_pages: Vec<u32> = if spec.repeat > 1 {
@@ -157,13 +160,16 @@ pub fn apply_booklet(
         .iter()
         .enumerate()
         .map(|(i, &id)| {
-            let mb = medpdf::get_page_media_box(doc, id).unwrap_or_else(|| {
-                eprintln!("Warning: could not read MediaBox for page {}, assuming letter size", i + 1);
-                [0.0, 0.0, 612.0, 792.0]
-            });
-            [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64]
+            medpdf::get_page_media_box(doc, id)
+                .map(|mb| [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64])
+                .ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "Could not read MediaBox for page {}; aborting booklet imposition",
+                        i + 1
+                    ))
+                })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     if spec.back >= num_pages {
         return Err(MedpdfError::new(format!(

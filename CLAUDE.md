@@ -14,7 +14,7 @@ Never commit changes to git without permission from the user.
 
 ## Repo Structure
 
-This is a standalone crate (no workspace). It depends on `medpdf` and `medpdf-image` from crates.io.
+This is a standalone crate (no workspace).  It depends on `medpdf` and `medpdf-image` from crates.io.
 
 ```
 pdf-maker/                    # Repository root
@@ -25,8 +25,7 @@ pdf-maker/                    # Repository root
 │   └── spec_types.rs          # CLI spec types with FromStr (WatermarkSpec, etc.)
 └── tests/
     ├── cli_tests.rs              # CLI integration tests
-    ├── lopdf_save_modern_bug.rs  # Sentinel test for lopdf encryption bug
-    └── spec_types_tests.rs       # (stub — unit tests live in src/spec_types.rs)
+    └── lopdf_save_modern_bug.rs  # Sentinel test for lopdf encryption bug
 ```
 
 ### Dependencies
