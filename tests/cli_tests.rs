@@ -90,10 +90,19 @@ fn pdf_dump_page_count(path: &Path) -> Option<u32> {
     json.get("page_count")?.as_u64().map(|n| n as u32)
 }
 
-/// Check if pdf-dump reports the PDF as encrypted.
-fn pdf_dump_is_encrypted(path: &Path) -> Option<bool> {
+/// Check whether pdf-dump reports the PDF as encrypted. Passes the user
+/// password so pdf-dump (0.23+) can decrypt and exit 0; without a password it
+/// exits non-zero (code 3) on an encrypted file and reports only partial data.
+fn pdf_dump_is_encrypted(path: &Path, password: &str) -> Option<bool> {
     let output = Command::new("pdf-dump")
-        .args([path.to_str().unwrap(), "--detail", "security", "--json"])
+        .args([
+            path.to_str().unwrap(),
+            "--password",
+            password,
+            "--detail",
+            "security",
+            "--json",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -167,7 +176,7 @@ fn cli_encryption_produces_encrypted_pdf() {
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path())
+    let encrypted = pdf_dump_is_encrypted(output.path(), "userpass")
         .expect("pdf-dump must be on PATH");
     assert!(encrypted, "Output PDF should be encrypted");
 }
@@ -193,7 +202,7 @@ fn cli_encryption_aes256() {
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path())
+    let encrypted = pdf_dump_is_encrypted(output.path(), "pass")
         .expect("pdf-dump must be on PATH");
     assert!(encrypted);
 }
@@ -219,7 +228,7 @@ fn cli_encryption_with_permissions() {
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path())
+    let encrypted = pdf_dump_is_encrypted(output.path(), "pass")
         .expect("pdf-dump must be on PATH");
     assert!(encrypted);
 }
