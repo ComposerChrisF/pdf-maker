@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use medpdf::Unit;
 
-use super::parse::{parse_paper_size, KvParser};
+use super::parse::{KvParser, parse_paper_size};
 
 #[derive(Debug, Clone)]
 pub struct OverlaySpec {
@@ -75,9 +75,16 @@ impl FromStr for BlankPageSpec {
         let trimmed = s.trim();
         if !trimmed.contains('=') {
             let (w, h) = parse_paper_size(trimmed).map_err(|_| {
-                format!("Unknown page size: '{}'. Use letter, a4, legal, or w=...,h=...", trimmed)
+                format!(
+                    "Unknown page size: '{}'. Use letter, a4, legal, or w=...,h=...",
+                    trimmed
+                )
             })?;
-            return Ok(BlankPageSpec { width: w, height: h, count: 1 });
+            return Ok(BlankPageSpec {
+                width: w,
+                height: h,
+                count: 1,
+            });
         }
 
         let kv = KvParser::parse(trimmed, "blank-page", &["w", "h", "units", "count"])?;

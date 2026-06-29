@@ -74,17 +74,34 @@ pub(super) fn unescape_text(s: &str) -> Result<String, String> {
             continue;
         }
         match chars.peek() {
-            Some(&'n') => { chars.next(); result.push('\n'); }
-            Some(&'t') => { chars.next(); result.push('\t'); }
-            Some(&'\\') => { chars.next(); result.push('\\'); }
+            Some(&'n') => {
+                chars.next();
+                result.push('\n');
+            }
+            Some(&'t') => {
+                chars.next();
+                result.push('\t');
+            }
+            Some(&'\\') => {
+                chars.next();
+                result.push('\\');
+            }
             Some(&'u') => {
                 chars.next();
                 let mut hex = String::with_capacity(4);
                 for _ in 0..4 {
                     match chars.next() {
                         Some(h) if h.is_ascii_hexdigit() => hex.push(h),
-                        Some(h) => return Err(format!("Invalid Unicode escape: \\u{hex}{h} (expected 4 hex digits)")),
-                        None => return Err(format!("Incomplete Unicode escape: \\u{hex} (expected 4 hex digits)")),
+                        Some(h) => {
+                            return Err(format!(
+                                "Invalid Unicode escape: \\u{hex}{h} (expected 4 hex digits)"
+                            ));
+                        }
+                        None => {
+                            return Err(format!(
+                                "Incomplete Unicode escape: \\u{hex} (expected 4 hex digits)"
+                            ));
+                        }
                     }
                 }
                 let code = u32::from_str_radix(&hex, 16)
@@ -97,15 +114,27 @@ pub(super) fn unescape_text(s: &str) -> Result<String, String> {
                 chars.next();
                 match chars.next() {
                     Some('{') => {}
-                    _ => { result.push('\\'); result.push('U'); continue; }
+                    _ => {
+                        result.push('\\');
+                        result.push('U');
+                        continue;
+                    }
                 }
                 let mut hex = String::with_capacity(6);
                 loop {
                     match chars.next() {
                         Some('}') => break,
                         Some(h) if h.is_ascii_hexdigit() && hex.len() < 6 => hex.push(h),
-                        Some(h) if h.is_ascii_hexdigit() => return Err(format!("Unicode escape too long: \\U{{{hex}{h}... (max 6 hex digits)")),
-                        Some(h) => return Err(format!("Invalid character in Unicode escape: \\U{{{hex}{h}")),
+                        Some(h) if h.is_ascii_hexdigit() => {
+                            return Err(format!(
+                                "Unicode escape too long: \\U{{{hex}{h}... (max 6 hex digits)"
+                            ));
+                        }
+                        Some(h) => {
+                            return Err(format!(
+                                "Invalid character in Unicode escape: \\U{{{hex}{h}"
+                            ));
+                        }
                         None => return Err(format!("Unclosed Unicode escape: \\U{{{hex}")),
                     }
                 }
@@ -148,7 +177,8 @@ pub(super) fn parse_color(s: &str) -> Result<PdfColor, String> {
     }
 
     let hex = s.strip_prefix('#').unwrap_or(s);
-    let parse_hex = |h: &str| u8::from_str_radix(h, 16).map_err(|_| format!("Invalid hex color: '{s}'"));
+    let parse_hex =
+        |h: &str| u8::from_str_radix(h, 16).map_err(|_| format!("Invalid hex color: '{s}'"));
 
     match hex.len() {
         3 => {
@@ -168,7 +198,12 @@ pub(super) fn parse_color(s: &str) -> Result<PdfColor, String> {
             let g = parse_hex(&hex[2..4])?;
             let b = parse_hex(&hex[4..6])?;
             let a = parse_hex(&hex[6..8])?;
-            Ok(PdfColor::rgba(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a as f32 / 255.0))
+            Ok(PdfColor::rgba(
+                r as f32 / 255.0,
+                g as f32 / 255.0,
+                b as f32 / 255.0,
+                a as f32 / 255.0,
+            ))
         }
         _ => Err(format!(
             "Invalid color value: '{s}'. Use a named color (black, white, red, blue, green, \
@@ -205,7 +240,9 @@ pub(super) fn parse_font_style(s: &str) -> Result<FontStyle, String> {
         "normal" => Ok(FontStyle::Normal),
         "italic" => Ok(FontStyle::Italic),
         "oblique" => Ok(FontStyle::Oblique(14.0)),
-        _ => Err(format!("Invalid style value: '{s}'. Use normal, italic, or oblique.")),
+        _ => Err(format!(
+            "Invalid style value: '{s}'. Use normal, italic, or oblique."
+        )),
     }
 }
 
@@ -214,7 +251,10 @@ pub(super) fn parse_paper_size(name: &str) -> Result<(f32, f32), String> {
         "letter" => Ok((612.0, 792.0)),
         "a4" => Ok((595.28, 841.89)),
         "legal" => Ok((612.0, 1008.0)),
-        _ => Err(format!("Unknown paper size: '{}'. Use letter, a4, or legal.", name)),
+        _ => Err(format!(
+            "Unknown paper size: '{}'. Use letter, a4, or legal.",
+            name
+        )),
     }
 }
 
@@ -237,9 +277,9 @@ impl KvParser {
     ) -> Result<Self, String> {
         let mut pairs: Vec<(String, String)> = Vec::new();
         for part in split_escaped_commas(s) {
-            let (k, v) = part
-                .split_once('=')
-                .ok_or_else(|| format!("Invalid key-value pair: '{part}'. Expected 'key=value'."))?;
+            let (k, v) = part.split_once('=').ok_or_else(|| {
+                format!("Invalid key-value pair: '{part}'. Expected 'key=value'.")
+            })?;
             let k = k.trim().to_string();
             let v = v.trim().to_string();
             if !allowed_keys.contains(&k.as_str()) {
@@ -254,7 +294,10 @@ impl KvParser {
     }
 
     pub(super) fn get(&self, key: &str) -> Option<&str> {
-        self.pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.pairs
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     pub(super) fn required_str(&self, key: &str) -> Result<&str, String> {
@@ -298,7 +341,9 @@ impl KvParser {
     pub(super) fn optional_units(&self) -> Result<Option<CliUnit>, String> {
         match self.get("units") {
             None => Ok(None),
-            Some(v) => CliUnit::from_str(v, true).map(Some).map_err(|e| e.to_string()),
+            Some(v) => CliUnit::from_str(v, true)
+                .map(Some)
+                .map_err(|e| e.to_string()),
         }
     }
 

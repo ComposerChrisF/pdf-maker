@@ -1,17 +1,19 @@
 use clap::{Parser, ValueEnum};
-use lopdf::{dictionary, Document, Object, Stream, StringFormat};
+use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 mod imposition;
 mod spec_types;
 
-use medpdf::{parse_page_spec, AddTextParams, DrawRectParams, DrawLineParams, MedpdfError};
+use medpdf::pdf_font::{FontCache, find_font_with_style};
+use medpdf::{AddTextParams, DrawLineParams, DrawRectParams, MedpdfError, parse_page_spec};
 use medpdf::{EncryptionAlgorithm, EncryptionParams};
-use medpdf::pdf_font::{find_font_with_style, FontCache};
 use medpdf_image::DrawImageParams;
-use spec_types::{WatermarkSpec, OverlaySpec, PadToSpec, PadFileSpec, DrawRectSpec, DrawLineSpec, DrawImageSpec, BlankPageSpec, NupSpec, BookletSpec};
-
+use spec_types::{
+    BlankPageSpec, BookletSpec, DrawImageSpec, DrawLineSpec, DrawRectSpec, NupSpec, OverlaySpec,
+    PadFileSpec, PadToSpec, WatermarkSpec,
+};
 
 const EXIT_STATUS_HELP: &str = "EXIT STATUS:
     0  Success.
@@ -89,7 +91,10 @@ struct Args {
         help = "Booklet imposition for saddle-stitched printing; pass with no value for defaults. Spec keys: paper, orientation, duplex_flip, back, etc. Conflicts with --nup"
     )]
     booklet: Option<BookletSpec>,
-    #[arg(long, help = "Use traditional PDF format for maximum compatibility with older tools")]
+    #[arg(
+        long,
+        help = "Use traditional PDF format for maximum compatibility with older tools"
+    )]
     broad_compatibility: bool,
     #[arg(long, help = "Disable font subsetting (embed full font files)")]
     no_subset: bool,
@@ -97,9 +102,17 @@ struct Args {
     user_password: Option<String>,
     #[arg(long, help = "Password required to change permissions/restrictions")]
     owner_password: Option<String>,
-    #[arg(long, default_value = "aes128", help = "Encryption algorithm: aes256, aes128, rc4")]
+    #[arg(
+        long,
+        default_value = "aes128",
+        help = "Encryption algorithm: aes256, aes128, rc4"
+    )]
     encryption_algorithm: EncryptionAlgo,
-    #[arg(long, value_delimiter = ',', help = "Comma-separated permissions: print,modify,copy,annotate,fill,accessibility,assemble,print_hq,all,none")]
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated permissions: print,modify,copy,annotate,fill,accessibility,assemble,print_hq,all,none"
+    )]
     permissions: Vec<String>,
 }
 
@@ -159,22 +172,28 @@ pub(crate) fn init_document() -> Document {
         "Type" => "Metadata",
         "Subtype" => "XML",
     };
-    doc.objects.insert(metadata_id, Object::Stream(Stream {
-        dict: metadata,
-        content: format_xmp_metadata(&doc_uuid).into_bytes(),
-        allows_compression: true,
-        start_position: None,
-    }));
+    doc.objects.insert(
+        metadata_id,
+        Object::Stream(Stream {
+            dict: metadata,
+            content: format_xmp_metadata(&doc_uuid).into_bytes(),
+            allows_compression: true,
+            start_position: None,
+        }),
+    );
     let catalog_id = doc.add_object(dictionary! {
         "Type" => "Catalog",
         "Pages" => pages_id,
         "Metadata" => metadata_id,
     });
     doc.trailer.set("Root", catalog_id);
-    doc.trailer.set("ID", Object::Array(vec![
-        Object::String(doc_uuid.clone().into_bytes(), StringFormat::Literal),
-        Object::String(doc_uuid.into_bytes(), StringFormat::Literal),
-    ]));
+    doc.trailer.set(
+        "ID",
+        Object::Array(vec![
+            Object::String(doc_uuid.clone().into_bytes(), StringFormat::Literal),
+            Object::String(doc_uuid.into_bytes(), StringFormat::Literal),
+        ]),
+    );
     doc
 }
 
@@ -192,18 +211,24 @@ fn merge_pages(
         let source_doc = Document::load(source_path)?;
         let source_page_count = source_doc.page_iter().count();
         let page_numbers_to_import = parse_page_spec(page_spec, source_page_count as u32)?;
-        eprintln!("page_numbers_to_import: {page_numbers_to_import:?}; source_page_count: {source_page_count}");
+        eprintln!(
+            "page_numbers_to_import: {page_numbers_to_import:?}; source_page_count: {source_page_count}"
+        );
 
         let mut copy_cache = std::collections::BTreeMap::new();
         for page_num in page_numbers_to_import {
             eprintln!("Copying page: {page_num} from {source_path}");
-            let new_page_id = medpdf::copy_page_with_cache(doc, &source_doc, page_num, &mut copy_cache)?;
+            let new_page_id =
+                medpdf::copy_page_with_cache(doc, &source_doc, page_num, &mut copy_cache)?;
             page_ids.push(new_page_id);
         }
     }
 
     for spec in blank_pages {
-        eprintln!("Adding {} blank page(s) ({}x{} pt)", spec.count, spec.width, spec.height);
+        eprintln!(
+            "Adding {} blank page(s) ({}x{} pt)",
+            spec.count, spec.width, spec.height
+        );
         for _ in 0..spec.count {
             let page_id = medpdf::create_blank_page(doc, spec.width, spec.height)?;
             page_ids.push(page_id);
@@ -227,8 +252,12 @@ fn apply_overlays(
         let overlay_doc = Document::load(&spec.file)?;
         let target_page_indices = parse_page_spec(&spec.target_pages, page_ids.len() as u32)?;
         for page_index in target_page_indices {
-            let dest_page_id = *page_ids.get((page_index - 1) as usize)
-                .ok_or_else(|| MedpdfError::new(format!("Overlay target page index {} out of range", page_index)))?;
+            let dest_page_id = *page_ids.get((page_index - 1) as usize).ok_or_else(|| {
+                MedpdfError::new(format!(
+                    "Overlay target page index {} out of range",
+                    page_index
+                ))
+            })?;
             medpdf::overlay_page(doc, dest_page_id, &overlay_doc, spec.src_page)?;
         }
     }
@@ -258,8 +287,12 @@ fn apply_drawing_commands(
                 .layer_over(layer_over);
             eprintln!("Drawing rect ({layer_name}) to pages '{target_page_indices:?}'");
             for page_index in target_page_indices {
-                let page_id = *page_ids.get((page_index - 1) as usize)
-                    .ok_or_else(|| MedpdfError::new(format!("draw-rect target page index {} out of range", page_index)))?;
+                let page_id = *page_ids.get((page_index - 1) as usize).ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "draw-rect target page index {} out of range",
+                        page_index
+                    ))
+                })?;
                 medpdf::add_rect(doc, page_id, &params)?;
             }
         }
@@ -272,8 +305,12 @@ fn apply_drawing_commands(
                 .layer_over(layer_over);
             eprintln!("Drawing line ({layer_name}) to pages '{target_page_indices:?}'");
             for page_index in target_page_indices {
-                let page_id = *page_ids.get((page_index - 1) as usize)
-                    .ok_or_else(|| MedpdfError::new(format!("draw-line target page index {} out of range", page_index)))?;
+                let page_id = *page_ids.get((page_index - 1) as usize).ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "draw-line target page index {} out of range",
+                        page_index
+                    ))
+                })?;
                 medpdf::add_line(doc, page_id, &params)?;
             }
         }
@@ -288,10 +325,17 @@ fn apply_drawing_commands(
                 (Some(w), Some(h)) => (w, h),
                 (Some(w), None) => (w, w * (img_h / img_w)),
                 (None, Some(h)) => (h * (img_w / img_h), h),
-                (None, None) => return Err(MedpdfError::new("draw-image requires at least one of 'w' or 'h'")),
+                (None, None) => {
+                    return Err(MedpdfError::new(
+                        "draw-image requires at least one of 'w' or 'h'",
+                    ));
+                }
             };
 
-            eprintln!("Drawing image ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.file.display());
+            eprintln!(
+                "Drawing image ({layer_name}) '{}' to pages '{target_page_indices:?}'",
+                spec.file.display()
+            );
             let build_params = |img| {
                 DrawImageParams::new(img, spec.x, spec.y, out_w, out_h)
                     .fit(spec.fit)
@@ -302,12 +346,20 @@ fn apply_drawing_commands(
             };
             if let Some((last_idx, rest)) = target_page_indices.split_last() {
                 for page_index in rest {
-                    let page_id = *page_ids.get((*page_index - 1) as usize)
-                        .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", page_index)))?;
+                    let page_id = *page_ids.get((*page_index - 1) as usize).ok_or_else(|| {
+                        MedpdfError::new(format!(
+                            "draw-image target page index {} out of range",
+                            page_index
+                        ))
+                    })?;
                     medpdf_image::add_image(doc, page_id, build_params(image_data.clone()))?;
                 }
-                let page_id = *page_ids.get((*last_idx - 1) as usize)
-                    .ok_or_else(|| MedpdfError::new(format!("draw-image target page index {} out of range", last_idx)))?;
+                let page_id = *page_ids.get((*last_idx - 1) as usize).ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "draw-image target page index {} out of range",
+                        last_idx
+                    ))
+                })?;
                 medpdf_image::add_image(doc, page_id, build_params(image_data))?;
             }
         }
@@ -331,10 +383,17 @@ fn apply_drawing_commands(
                 .strikeout(spec.strikeout)
                 .underline(spec.underline);
 
-            eprintln!("Applying watermark ({layer_name}) '{}' to pages '{target_page_indices:?}'", spec.text);
+            eprintln!(
+                "Applying watermark ({layer_name}) '{}' to pages '{target_page_indices:?}'",
+                spec.text
+            );
             for page_index in target_page_indices {
-                let page_id = *page_ids.get((page_index - 1) as usize)
-                    .ok_or_else(|| MedpdfError::new(format!("Watermark target page index {} out of range", page_index)))?;
+                let page_id = *page_ids.get((page_index - 1) as usize).ok_or_else(|| {
+                    MedpdfError::new(format!(
+                        "Watermark target page index {} out of range",
+                        page_index
+                    ))
+                })?;
                 medpdf::add_text_params(doc, page_id, &params, &mut font_object_cache)?;
             }
         }
@@ -356,11 +415,15 @@ fn apply_padding(
         if current_page_count > 0 {
             let pages_to_add = (pages - (current_page_count % pages)) % pages;
             if pages_to_add > 0 {
-                eprintln!("   -> Padding with {pages_to_add} page(s) to reach a multiple of {pages}.");
-                let last_page_id = *page_ids.last()
+                eprintln!(
+                    "   -> Padding with {pages_to_add} page(s) to reach a multiple of {pages}."
+                );
+                let last_page_id = *page_ids
+                    .last()
                     .ok_or_else(|| MedpdfError::new("No pages in document to pad"))?;
-                let media_box = medpdf::get_page_media_box(doc, last_page_id)
-                    .ok_or_else(|| MedpdfError::new("Could not determine MediaBox for last page"))?;
+                let media_box = medpdf::get_page_media_box(doc, last_page_id).ok_or_else(|| {
+                    MedpdfError::new("Could not determine MediaBox for last page")
+                })?;
                 let width = media_box[2] - media_box[0];
                 let height = media_box[3] - media_box[1];
 
@@ -415,7 +478,9 @@ fn run() -> Result<(), MedpdfError> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let args = Args::parse();
     if !args.inputs.is_empty() && args.inputs.len() % 2 != 0 {
-        return Err("Input arguments must be in pairs of file paths and page specifications.".into());
+        return Err(
+            "Input arguments must be in pairs of file paths and page specifications.".into(),
+        );
     }
 
     let mut doc = init_document();
@@ -432,11 +497,23 @@ fn run() -> Result<(), MedpdfError> {
     }
 
     apply_overlays(&mut doc, &page_ids, &args.overlay)?;
-    let font_object_cache = apply_drawing_commands(&mut doc, &page_ids, &args.draw_rect, &args.draw_line, &args.draw_image, &args.watermark)?;
+    let font_object_cache = apply_drawing_commands(
+        &mut doc,
+        &page_ids,
+        &args.draw_rect,
+        &args.draw_line,
+        &args.draw_image,
+        &args.watermark,
+    )?;
     if !args.no_subset {
         medpdf::subset_fonts(&mut doc, &font_object_cache)?;
     }
-    apply_padding(&mut doc, &mut page_ids, &args.pad_to, &args.pad_last_page_file)?;
+    apply_padding(
+        &mut doc,
+        &mut page_ids,
+        &args.pad_to,
+        &args.pad_last_page_file,
+    )?;
 
     let encryption = match (&args.user_password, &args.owner_password) {
         (None, None) => None,
@@ -444,9 +521,12 @@ fn run() -> Result<(), MedpdfError> {
             let user = args.user_password.as_deref().unwrap_or("");
             let owner = args.owner_password.as_deref().unwrap_or(user);
             let algo = EncryptionAlgorithm::from(args.encryption_algorithm);
-            let perms = medpdf::parse_permissions(&args.permissions)
-                .map_err(MedpdfError::new)?;
-            Some(EncryptionParams::new(user, owner).algorithm(algo).permissions(perms))
+            let perms = medpdf::parse_permissions(&args.permissions).map_err(MedpdfError::new)?;
+            Some(
+                EncryptionParams::new(user, owner)
+                    .algorithm(algo)
+                    .permissions(perms),
+            )
         }
     };
 

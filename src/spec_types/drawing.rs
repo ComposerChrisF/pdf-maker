@@ -7,7 +7,7 @@ use medpdf::{FontStyle, FontWeight, HAlign, PdfColor, Unit, VAlign};
 use medpdf_image::ImageFit;
 
 use super::parse::{
-    parse_color, parse_font_style, parse_font_weight, strip_quotes, unescape_text, KvParser,
+    KvParser, parse_color, parse_font_style, parse_font_weight, strip_quotes, unescape_text,
 };
 
 #[derive(Debug, Clone)]
@@ -31,8 +31,23 @@ pub struct WatermarkSpec {
 }
 
 const WATERMARK_KEYS: &[&str] = &[
-    "text", "font", "size", "x", "y", "units", "pages", "color", "alpha", "rotation",
-    "h_align", "v_align", "strikeout", "underline", "layer", "weight", "style",
+    "text",
+    "font",
+    "size",
+    "x",
+    "y",
+    "units",
+    "pages",
+    "color",
+    "alpha",
+    "rotation",
+    "h_align",
+    "v_align",
+    "strikeout",
+    "underline",
+    "layer",
+    "weight",
+    "style",
 ];
 
 fn parse_h_align(v: &str) -> Result<HAlign, String> {
@@ -40,7 +55,9 @@ fn parse_h_align(v: &str) -> Result<HAlign, String> {
         "left" => Ok(HAlign::Left),
         "center" => Ok(HAlign::Center),
         "right" => Ok(HAlign::Right),
-        _ => Err(format!("Invalid h_align value: '{v}'. Use left, center, or right.")),
+        _ => Err(format!(
+            "Invalid h_align value: '{v}'. Use left, center, or right."
+        )),
     }
 }
 
@@ -71,25 +88,38 @@ impl FromStr for WatermarkSpec {
 
         let size = kv.optional_parse::<f32>("size")?.unwrap_or(48.0);
         let units = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::In);
-        let pages = kv.get("pages").map(str::to_string).unwrap_or_else(|| "all".to_string());
+        let pages = kv
+            .get("pages")
+            .map(str::to_string)
+            .unwrap_or_else(|| "all".to_string());
         let color_opt = kv.optional_with("color", parse_color)?;
         let alpha = kv.optional_parse::<f32>("alpha")?;
         let rotation = kv.optional_parse::<f32>("rotation")?.unwrap_or(0.0);
-        let h_align = kv.optional_with("h_align", parse_h_align)?.unwrap_or(HAlign::Left);
-        let v_align = kv.optional_with("v_align", parse_v_align)?.unwrap_or(VAlign::Baseline);
-        let strikeout = kv.optional_with("strikeout", |v| {
-            v.parse::<bool>()
-                .map_err(|_| format!("Invalid strikeout value: '{v}'. Use true or false."))
-        })?
-        .unwrap_or(false);
-        let underline = kv.optional_with("underline", |v| {
-            v.parse::<bool>()
-                .map_err(|_| format!("Invalid underline value: '{v}'. Use true or false."))
-        })?
-        .unwrap_or(false);
+        let h_align = kv
+            .optional_with("h_align", parse_h_align)?
+            .unwrap_or(HAlign::Left);
+        let v_align = kv
+            .optional_with("v_align", parse_v_align)?
+            .unwrap_or(VAlign::Baseline);
+        let strikeout = kv
+            .optional_with("strikeout", |v| {
+                v.parse::<bool>()
+                    .map_err(|_| format!("Invalid strikeout value: '{v}'. Use true or false."))
+            })?
+            .unwrap_or(false);
+        let underline = kv
+            .optional_with("underline", |v| {
+                v.parse::<bool>()
+                    .map_err(|_| format!("Invalid underline value: '{v}'. Use true or false."))
+            })?
+            .unwrap_or(false);
         let layer_over = kv.optional_layer()?.unwrap_or(true);
-        let weight = kv.optional_with("weight", parse_font_weight)?.unwrap_or_default();
-        let style = kv.optional_with("style", parse_font_style)?.unwrap_or_default();
+        let weight = kv
+            .optional_with("weight", parse_font_weight)?
+            .unwrap_or_default();
+        let style = kv
+            .optional_with("style", parse_font_style)?
+            .unwrap_or_default();
 
         let mut final_color = color_opt.unwrap_or(PdfColor::BLACK);
         if let Some(a) = alpha {
@@ -134,7 +164,9 @@ impl FromStr for DrawRectSpec {
         let kv = KvParser::parse(
             s,
             "draw-rect",
-            &["x", "y", "w", "h", "color", "alpha", "pages", "units", "layer"],
+            &[
+                "x", "y", "w", "h", "color", "alpha", "pages", "units", "layer",
+            ],
         )?;
         let unit: Unit = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::Pt);
 
@@ -144,7 +176,10 @@ impl FromStr for DrawRectSpec {
         let h = kv.required_parse::<f32>("h")?;
         let color_opt = kv.optional_with("color", parse_color)?;
         let alpha = kv.optional_parse::<f32>("alpha")?;
-        let pages = kv.get("pages").map(str::to_string).unwrap_or_else(|| "all".to_string());
+        let pages = kv
+            .get("pages")
+            .map(str::to_string)
+            .unwrap_or_else(|| "all".to_string());
         let layer_over = kv.optional_layer()?.unwrap_or(true);
 
         let mut final_color = color_opt.unwrap_or(PdfColor::BLACK);
@@ -182,7 +217,9 @@ impl FromStr for DrawLineSpec {
         let kv = KvParser::parse(
             s,
             "draw-line",
-            &["x1", "y1", "x2", "y2", "width", "color", "alpha", "pages", "units", "layer"],
+            &[
+                "x1", "y1", "x2", "y2", "width", "color", "alpha", "pages", "units", "layer",
+            ],
         )?;
         let unit: Unit = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::Pt);
 
@@ -193,7 +230,10 @@ impl FromStr for DrawLineSpec {
         let width = kv.optional_parse::<f32>("width")?.unwrap_or(1.0);
         let color_opt = kv.optional_with("color", parse_color)?;
         let alpha = kv.optional_parse::<f32>("alpha")?;
-        let pages = kv.get("pages").map(str::to_string).unwrap_or_else(|| "all".to_string());
+        let pages = kv
+            .get("pages")
+            .map(str::to_string)
+            .unwrap_or_else(|| "all".to_string());
         let layer_over = kv.optional_layer()?.unwrap_or(true);
 
         let mut final_color = color_opt.unwrap_or(PdfColor::BLACK);
@@ -234,7 +274,9 @@ fn parse_image_fit(v: &str) -> Result<ImageFit, String> {
         "stretch" => Ok(ImageFit::Stretch),
         "contain" => Ok(ImageFit::Contain),
         "cover" => Ok(ImageFit::Cover),
-        _ => Err(format!("Invalid fit value: '{v}'. Use stretch, contain, or cover.")),
+        _ => Err(format!(
+            "Invalid fit value: '{v}'. Use stretch, contain, or cover."
+        )),
     }
 }
 
@@ -259,9 +301,14 @@ impl FromStr for DrawImageSpec {
         if w.is_none() && h.is_none() {
             return Err("draw-image requires at least one of 'w' or 'h'".to_string());
         }
-        let fit = kv.optional_with("fit", parse_image_fit)?.unwrap_or(ImageFit::Contain);
+        let fit = kv
+            .optional_with("fit", parse_image_fit)?
+            .unwrap_or(ImageFit::Contain);
         let max_dpi = kv.optional_parse::<f32>("max_dpi")?.unwrap_or(300.0);
-        let pages = kv.get("pages").map(str::to_string).unwrap_or_else(|| "all".to_string());
+        let pages = kv
+            .get("pages")
+            .map(str::to_string)
+            .unwrap_or_else(|| "all".to_string());
         let layer_over = kv.optional_layer()?.unwrap_or(true);
         let alpha = kv.optional_parse::<f32>("alpha")?.unwrap_or(1.0);
         let rotation = kv.optional_parse::<f32>("rotation")?.unwrap_or(0.0);
@@ -371,9 +418,8 @@ mod tests {
 
     #[test]
     fn test_watermark_alpha_overrides_hex_alpha() {
-        let spec = WatermarkSpec::from_str(
-            "text=X,font=@H,x=0,y=0,color=#FF0000FF,alpha=0.3"
-        ).unwrap();
+        let spec =
+            WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,color=#FF0000FF,alpha=0.3").unwrap();
         assert!((spec.color.a - 0.3).abs() < f32::EPSILON);
     }
 
@@ -443,7 +489,8 @@ mod tests {
 
     #[test]
     fn test_watermark_spec_whitespace_in_key_value() {
-        let spec = WatermarkSpec::from_str("text = DRAFT , font = @Helvetica , x = 1 , y = 1").unwrap();
+        let spec =
+            WatermarkSpec::from_str("text = DRAFT , font = @Helvetica , x = 1 , y = 1").unwrap();
         assert_eq!(spec.text, "DRAFT");
         assert_eq!(spec.font, PathBuf::from("@Helvetica"));
     }
@@ -500,7 +547,8 @@ mod tests {
 
     #[test]
     fn test_watermark_spec_quoted_text() {
-        let spec = WatermarkSpec::from_str(r#"text="Hello, World",font=@Helvetica,x=1,y=1"#).unwrap();
+        let spec =
+            WatermarkSpec::from_str(r#"text="Hello, World",font=@Helvetica,x=1,y=1"#).unwrap();
         assert_eq!(spec.text, "Hello, World");
     }
 
@@ -544,7 +592,8 @@ mod tests {
             ("extrabold", FontWeight::EXTRA_BOLD),
             ("black", FontWeight::BLACK),
         ] {
-            let spec = WatermarkSpec::from_str(&format!("text=X,font=@H,x=0,y=0,weight={name}")).unwrap();
+            let spec =
+                WatermarkSpec::from_str(&format!("text=X,font=@H,x=0,y=0,weight={name}")).unwrap();
             assert_eq!(spec.weight, expected, "weight={name}");
         }
     }
@@ -600,7 +649,8 @@ mod tests {
 
     #[test]
     fn test_watermark_spec_weight_and_style_combined() {
-        let spec = WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,weight=bold,style=italic").unwrap();
+        let spec =
+            WatermarkSpec::from_str("text=X,font=@H,x=0,y=0,weight=bold,style=italic").unwrap();
         assert_eq!(spec.weight, FontWeight::BOLD);
         assert_eq!(spec.style, FontStyle::Italic);
     }
@@ -641,7 +691,9 @@ mod tests {
 
     #[test]
     fn test_draw_rect_spec_full() {
-        let spec = DrawRectSpec::from_str("x=1,y=2,w=3,h=4,color=red,pages=1-3,units=in,layer=under").unwrap();
+        let spec =
+            DrawRectSpec::from_str("x=1,y=2,w=3,h=4,color=red,pages=1-3,units=in,layer=under")
+                .unwrap();
         assert!((spec.x - 72.0).abs() < f32::EPSILON);
         assert!((spec.y - 144.0).abs() < f32::EPSILON);
         assert!((spec.w - 216.0).abs() < f32::EPSILON);
@@ -708,7 +760,10 @@ mod tests {
 
     #[test]
     fn test_draw_line_spec_full() {
-        let spec = DrawLineSpec::from_str("x1=1,y1=2,x2=3,y2=4,width=2.5,color=blue,pages=1,units=in,layer=under").unwrap();
+        let spec = DrawLineSpec::from_str(
+            "x1=1,y1=2,x2=3,y2=4,width=2.5,color=blue,pages=1,units=in,layer=under",
+        )
+        .unwrap();
         assert!((spec.x1 - 72.0).abs() < f32::EPSILON);
         assert!((spec.y1 - 144.0).abs() < f32::EPSILON);
         assert!((spec.x2 - 216.0).abs() < f32::EPSILON);
@@ -844,13 +899,15 @@ mod tests {
 
     #[test]
     fn test_draw_image_spec_fit_stretch() {
-        let spec = DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,h=100,fit=stretch").unwrap();
+        let spec =
+            DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,h=100,fit=stretch").unwrap();
         assert_eq!(spec.fit, ImageFit::Stretch);
     }
 
     #[test]
     fn test_draw_image_spec_fit_contain() {
-        let spec = DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,h=100,fit=contain").unwrap();
+        let spec =
+            DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,h=100,fit=contain").unwrap();
         assert_eq!(spec.fit, ImageFit::Contain);
     }
 

@@ -5,7 +5,7 @@
 //!
 //! Tests that verify PDF content use `pdf-dump --json` for inspection.
 
-use lopdf::{dictionary, Document, Object, Stream, StringFormat};
+use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use std::path::Path;
 use std::process::Command;
 
@@ -57,11 +57,7 @@ fn create_test_pdf(path: &Path, num_pages: u32) {
         };
         let page_id = doc.add_object(page);
 
-        let pd = doc
-            .get_object_mut(pages_id)
-            .unwrap()
-            .as_dict_mut()
-            .unwrap();
+        let pd = doc.get_object_mut(pages_id).unwrap().as_dict_mut().unwrap();
         pd.get_mut(b"Kids")
             .unwrap()
             .as_array_mut()
@@ -123,14 +119,18 @@ fn cli_merge_all_pages() {
 
     // Act
     let status = pdf_maker_bin()
-        .args(["-o", output.path().to_str().unwrap(), input.path().to_str().unwrap(), "all"])
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+        ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 3);
 }
 
@@ -143,14 +143,18 @@ fn cli_merge_page_range() {
 
     // Act
     let status = pdf_maker_bin()
-        .args(["-o", output.path().to_str().unwrap(), input.path().to_str().unwrap(), "2-4"])
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "2-4",
+        ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 3);
 }
 
@@ -166,18 +170,22 @@ fn cli_encryption_produces_encrypted_pdf() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--user-password", "userpass",
-            "--owner-password", "ownerpass",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--user-password",
+            "userpass",
+            "--owner-password",
+            "ownerpass",
         ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path(), "userpass")
-        .expect("pdf-dump must be on PATH");
+    let encrypted =
+        pdf_dump_is_encrypted(output.path(), "userpass").expect("pdf-dump must be on PATH");
     assert!(encrypted, "Output PDF should be encrypted");
 }
 
@@ -191,19 +199,23 @@ fn cli_encryption_aes256() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--user-password", "pass",
-            "--owner-password", "owner",
-            "--encryption-algorithm", "aes256",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--user-password",
+            "pass",
+            "--owner-password",
+            "owner",
+            "--encryption-algorithm",
+            "aes256",
         ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path(), "pass")
-        .expect("pdf-dump must be on PATH");
+    let encrypted = pdf_dump_is_encrypted(output.path(), "pass").expect("pdf-dump must be on PATH");
     assert!(encrypted);
 }
 
@@ -217,19 +229,23 @@ fn cli_encryption_with_permissions() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--user-password", "pass",
-            "--owner-password", "owner",
-            "--permissions", "print,copy",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--user-password",
+            "pass",
+            "--owner-password",
+            "owner",
+            "--permissions",
+            "print,copy",
         ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let encrypted = pdf_dump_is_encrypted(output.path(), "pass")
-        .expect("pdf-dump must be on PATH");
+    let encrypted = pdf_dump_is_encrypted(output.path(), "pass").expect("pdf-dump must be on PATH");
     assert!(encrypted);
 }
 
@@ -245,17 +261,19 @@ fn cli_pad_to_multiple() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--pad-to", "4",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--pad-to",
+            "4",
         ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 4);
 }
 
@@ -269,16 +287,17 @@ fn cli_blank_page_named_size() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            "--blank-page", "letter",
+            "-o",
+            output.path().to_str().unwrap(),
+            "--blank-page",
+            "letter",
         ])
         .status()
         .unwrap();
 
     // Assert
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 1);
 }
 
@@ -307,7 +326,12 @@ fn cli_nonexistent_input_file() {
 
     // Act
     let result = pdf_maker_bin()
-        .args(["-o", output.path().to_str().unwrap(), "/nonexistent/file.pdf", "all"])
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            "/nonexistent/file.pdf",
+            "all",
+        ])
         .output()
         .unwrap();
 
@@ -325,8 +349,10 @@ fn cli_broad_compatibility() {
     // Act
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
             "--broad-compatibility",
         ])
         .status()
@@ -334,8 +360,7 @@ fn cli_broad_compatibility() {
 
     // Assert
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 1);
 }
 
@@ -343,15 +368,11 @@ fn cli_broad_compatibility() {
 
 /// Minimal 1×1 red RGB PNG for --draw-image tests.
 const RED_PIXEL_PNG: &[u8] = &[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-    0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54,
-    0x08, 0x99, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01,
-    0xE3, 0xCE, 0xC5, 0x0E,
-    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
-    0xAE, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0x99, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+    0x00, 0x00, 0x03, 0x00, 0x01, 0xE3, 0xCE, 0xC5, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
 
 fn write_test_png(path: &Path) {
@@ -363,14 +384,15 @@ fn cli_blank_page_custom_dimensions() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            "--blank-page", "w=8.5,h=11,units=in,count=3",
+            "-o",
+            output.path().to_str().unwrap(),
+            "--blank-page",
+            "w=8.5,h=11,units=in,count=3",
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 3);
 }
 
@@ -389,8 +411,7 @@ fn cli_watermark_applied() {
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }
 
@@ -401,15 +422,17 @@ fn cli_draw_rect_applied() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--draw-rect", "x=72,y=72,w=200,h=100,color=blue,alpha=0.5,pages=all",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--draw-rect",
+            "x=72,y=72,w=200,h=100,color=blue,alpha=0.5,pages=all",
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }
 
@@ -420,15 +443,17 @@ fn cli_draw_line_applied() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--draw-line", "x1=72,y1=720,x2=540,y2=720,width=1.5,color=#444,pages=1",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--draw-line",
+            "x1=72,y1=720,x2=540,y2=720,width=1.5,color=#444,pages=1",
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 1);
 }
 
@@ -436,24 +461,25 @@ fn cli_draw_line_applied() {
 fn cli_draw_image_applied() {
     let input = tempfile::NamedTempFile::new().unwrap();
     create_test_pdf(input.path(), 2);
-    let img = tempfile::Builder::new()
-        .suffix(".png")
-        .tempfile()
-        .unwrap();
+    let img = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
     write_test_png(img.path());
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
             "--draw-image",
-            &format!("file={},x=1,y=1,w=2,units=in,fit=contain,pages=all", img.path().display()),
+            &format!(
+                "file={},x=1,y=1,w=2,units=in,fit=contain,pages=all",
+                img.path().display()
+            ),
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }
 
@@ -466,16 +492,20 @@ fn cli_overlay_applied() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            base.path().to_str().unwrap(), "all",
+            "-o",
+            output.path().to_str().unwrap(),
+            base.path().to_str().unwrap(),
+            "all",
             "--overlay",
-            &format!("file={},src_page=1,target_pages=1-3", overlay.path().display()),
+            &format!(
+                "file={},src_page=1,target_pages=1-3",
+                overlay.path().display()
+            ),
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 3);
 }
 
@@ -487,15 +517,17 @@ fn cli_nup_2x2() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
-            "--nup", "cols=2,rows=2",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--nup",
+            "cols=2,rows=2",
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }
 
@@ -507,14 +539,15 @@ fn cli_booklet_default() {
     let output = tempfile::NamedTempFile::new().unwrap();
     let status = pdf_maker_bin()
         .args([
-            "-o", output.path().to_str().unwrap(),
-            input.path().to_str().unwrap(), "all",
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
             "--booklet",
         ])
         .status()
         .unwrap();
     assert!(status.success());
-    let page_count = pdf_dump_page_count(output.path())
-        .expect("pdf-dump must be on PATH");
+    let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }

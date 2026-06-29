@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use medpdf::Unit;
 
-use super::parse::{parse_paper_size, KvParser};
+use super::parse::{KvParser, parse_paper_size};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Orientation {
@@ -36,7 +36,9 @@ fn parse_orientation(v: &str) -> Result<Orientation, String> {
         "auto" => Ok(Orientation::Auto),
         "landscape" => Ok(Orientation::Landscape),
         "portrait" => Ok(Orientation::Portrait),
-        _ => Err(format!("Invalid orientation: '{v}'. Use auto, landscape, or portrait.")),
+        _ => Err(format!(
+            "Invalid orientation: '{v}'. Use auto, landscape, or portrait."
+        )),
     }
 }
 
@@ -46,7 +48,9 @@ fn parse_grid_order(v: &str) -> Result<GridOrder, String> {
         "rltb" => Ok(GridOrder::RightToLeftTopToBottom),
         "tblr" => Ok(GridOrder::TopToBottomLeftToRight),
         "tbrl" => Ok(GridOrder::TopToBottomRightToLeft),
-        _ => Err(format!("Invalid order: '{v}'. Use lrtb, rltb, tblr, or tbrl.")),
+        _ => Err(format!(
+            "Invalid order: '{v}'. Use lrtb, rltb, tblr, or tbrl."
+        )),
     }
 }
 
@@ -55,7 +59,9 @@ fn parse_duplex_flip(v: &str) -> Result<DuplexFlip, String> {
         "none" => Ok(DuplexFlip::None),
         "short_edge" => Ok(DuplexFlip::ShortEdge),
         "long_edge" => Ok(DuplexFlip::LongEdge),
-        _ => Err(format!("Invalid flip value: '{v}'. Use none, short_edge, or long_edge.")),
+        _ => Err(format!(
+            "Invalid flip value: '{v}'. Use none, short_edge, or long_edge."
+        )),
     }
 }
 
@@ -125,8 +131,19 @@ pub struct NupSpec {
 }
 
 const NUP_KEYS: &[&str] = &[
-    "n", "cols", "rows", "paper", "paper_w", "paper_h", "orientation", "margin", "gutter",
-    "units", "order", "border", "repeat",
+    "n",
+    "cols",
+    "rows",
+    "paper",
+    "paper_w",
+    "paper_h",
+    "orientation",
+    "margin",
+    "gutter",
+    "units",
+    "order",
+    "border",
+    "repeat",
 ];
 
 impl FromStr for NupSpec {
@@ -221,7 +238,13 @@ pub struct BookletSpec {
 }
 
 const BOOKLET_KEYS: &[&str] = &[
-    "paper", "paper_w", "paper_h", "binding_margin", "units", "flip", "back",
+    "paper",
+    "paper_w",
+    "paper_h",
+    "binding_margin",
+    "units",
+    "flip",
+    "back",
 ];
 
 impl FromStr for BookletSpec {
@@ -251,7 +274,11 @@ impl FromStr for BookletSpec {
 
         let (pw, ph) = resolve_paper_dims(&paper, paper_w, paper_h, unit, (792.0, 612.0))?;
         // For named paper sizes, ensure landscape orientation
-        let (pw, ph) = if paper.is_some() && ph > pw { (ph, pw) } else { (pw, ph) };
+        let (pw, ph) = if paper.is_some() && ph > pw {
+            (ph, pw)
+        } else {
+            (pw, ph)
+        };
 
         Ok(BookletSpec {
             paper_width: pw,
@@ -310,7 +337,8 @@ mod tests {
 
     #[test]
     fn test_nup_spec_with_options() {
-        let spec = NupSpec::from_str("n=4,margin=0.5,gutter=0.25,units=in,border=true,order=rltb").unwrap();
+        let spec = NupSpec::from_str("n=4,margin=0.5,gutter=0.25,units=in,border=true,order=rltb")
+            .unwrap();
         assert!((spec.margin - 36.0).abs() < f32::EPSILON);
         assert!((spec.gutter - 18.0).abs() < f32::EPSILON);
         assert!(spec.border);
@@ -385,7 +413,12 @@ mod tests {
 
     #[test]
     fn test_nup_spec_repeat_auto_3x2() {
-        assert_eq!(NupSpec::from_str("cols=3,rows=2,repeat=auto").unwrap().repeat, 6);
+        assert_eq!(
+            NupSpec::from_str("cols=3,rows=2,repeat=auto")
+                .unwrap()
+                .repeat,
+            6
+        );
     }
 
     #[test]

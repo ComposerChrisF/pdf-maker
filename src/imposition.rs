@@ -94,9 +94,9 @@ pub fn apply_nup(
 
             let scale = (cell_w / src_w).min(cell_h / src_h);
 
-            let x = margin + col as f64 * (cell_w + gutter)
-                + (cell_w - src_w * scale) / 2.0;
-            let y = margin + (spec.rows - 1 - row) as f64 * (cell_h + gutter)
+            let x = margin + col as f64 * (cell_w + gutter) + (cell_w - src_w * scale) / 2.0;
+            let y = margin
+                + (spec.rows - 1 - row) as f64 * (cell_h + gutter)
                 + (cell_h - src_h * scale) / 2.0;
 
             placements.push(PagePlacement {
@@ -128,16 +128,45 @@ pub fn apply_nup(
         let page_id = page_ids[border.sheet_index];
         let color = PdfColor::rgb(0.5, 0.5, 0.5);
         let line_w = 0.5;
-        let (bx, by, bw, bh) = (border.x as f32, border.y as f32, border.w as f32, border.h as f32);
+        let (bx, by, bw, bh) = (
+            border.x as f32,
+            border.y as f32,
+            border.w as f32,
+            border.h as f32,
+        );
 
         // Bottom
-        medpdf::add_line(doc, page_id, &DrawLineParams::new(bx, by, bx + bw, by).line_width(line_w).color(color))?;
+        medpdf::add_line(
+            doc,
+            page_id,
+            &DrawLineParams::new(bx, by, bx + bw, by)
+                .line_width(line_w)
+                .color(color),
+        )?;
         // Right
-        medpdf::add_line(doc, page_id, &DrawLineParams::new(bx + bw, by, bx + bw, by + bh).line_width(line_w).color(color))?;
+        medpdf::add_line(
+            doc,
+            page_id,
+            &DrawLineParams::new(bx + bw, by, bx + bw, by + bh)
+                .line_width(line_w)
+                .color(color),
+        )?;
         // Top
-        medpdf::add_line(doc, page_id, &DrawLineParams::new(bx + bw, by + bh, bx, by + bh).line_width(line_w).color(color))?;
+        medpdf::add_line(
+            doc,
+            page_id,
+            &DrawLineParams::new(bx + bw, by + bh, bx, by + bh)
+                .line_width(line_w)
+                .color(color),
+        )?;
         // Left
-        medpdf::add_line(doc, page_id, &DrawLineParams::new(bx, by + bh, bx, by).line_width(line_w).color(color))?;
+        medpdf::add_line(
+            doc,
+            page_id,
+            &DrawLineParams::new(bx, by + bh, bx, by)
+                .line_width(line_w)
+                .color(color),
+        )?;
     }
 
     Ok(())
@@ -218,12 +247,11 @@ pub fn apply_booklet(
             // Apply duplex flip for back pages.
             // LongEdge: no rotation needed — long-edge duplex is the natural
             // orientation for landscape booklets, so it behaves like None.
-            let (x, y, rotation) =
-                if is_back && spec.flip == DuplexFlip::ShortEdge {
-                    (cx + src_w * scale, cy + src_h * scale, 180.0)
-                } else {
-                    (cx, cy, 0.0)
-                };
+            let (x, y, rotation) = if is_back && spec.flip == DuplexFlip::ShortEdge {
+                (cx + src_w * scale, cy + src_h * scale, 180.0)
+            } else {
+                (cx, cy, 0.0)
+            };
 
             placements.push(PagePlacement {
                 source_page: page_num,
@@ -269,7 +297,13 @@ fn impose_pages(
             }
             let params = PlacePageParams::new(placement.x, placement.y, placement.scale)
                 .rotation(placement.rotation);
-            medpdf::place_page(doc, dest_page_id, &source_doc, placement.source_page, &params)?;
+            medpdf::place_page(
+                doc,
+                dest_page_id,
+                &source_doc,
+                placement.source_page,
+                &params,
+            )?;
         }
     }
 
@@ -330,16 +364,32 @@ fn booklet_page_order(page_count: u32) -> Vec<[u32; 2]> {
         let front_left = total - 2 * s;
         let front_right = 2 * s + 1;
         pairs.push([
-            if front_left <= page_count { front_left } else { 0 },
-            if front_right <= page_count { front_right } else { 0 },
+            if front_left <= page_count {
+                front_left
+            } else {
+                0
+            },
+            if front_right <= page_count {
+                front_right
+            } else {
+                0
+            },
         ]);
 
         // Back: [2*s + 2, total - 2*s - 1]
         let back_left = 2 * s + 2;
         let back_right = total - 2 * s - 1;
         pairs.push([
-            if back_left <= page_count { back_left } else { 0 },
-            if back_right <= page_count { back_right } else { 0 },
+            if back_left <= page_count {
+                back_left
+            } else {
+                0
+            },
+            if back_right <= page_count {
+                back_right
+            } else {
+                0
+            },
         ]);
     }
 
@@ -353,36 +403,90 @@ mod tests {
     #[test]
     fn test_grid_position_lrtb() {
         // 3 cols, 2 rows: indices 0..5
-        assert_eq!(grid_position(0, 3, 2, GridOrder::LeftToRightTopToBottom), (0, 0));
-        assert_eq!(grid_position(1, 3, 2, GridOrder::LeftToRightTopToBottom), (0, 1));
-        assert_eq!(grid_position(2, 3, 2, GridOrder::LeftToRightTopToBottom), (0, 2));
-        assert_eq!(grid_position(3, 3, 2, GridOrder::LeftToRightTopToBottom), (1, 0));
-        assert_eq!(grid_position(4, 3, 2, GridOrder::LeftToRightTopToBottom), (1, 1));
-        assert_eq!(grid_position(5, 3, 2, GridOrder::LeftToRightTopToBottom), (1, 2));
+        assert_eq!(
+            grid_position(0, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (0, 0)
+        );
+        assert_eq!(
+            grid_position(1, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (0, 1)
+        );
+        assert_eq!(
+            grid_position(2, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (0, 2)
+        );
+        assert_eq!(
+            grid_position(3, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (1, 0)
+        );
+        assert_eq!(
+            grid_position(4, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (1, 1)
+        );
+        assert_eq!(
+            grid_position(5, 3, 2, GridOrder::LeftToRightTopToBottom),
+            (1, 2)
+        );
     }
 
     #[test]
     fn test_grid_position_rltb() {
-        assert_eq!(grid_position(0, 3, 2, GridOrder::RightToLeftTopToBottom), (0, 2));
-        assert_eq!(grid_position(1, 3, 2, GridOrder::RightToLeftTopToBottom), (0, 1));
-        assert_eq!(grid_position(2, 3, 2, GridOrder::RightToLeftTopToBottom), (0, 0));
-        assert_eq!(grid_position(3, 3, 2, GridOrder::RightToLeftTopToBottom), (1, 2));
+        assert_eq!(
+            grid_position(0, 3, 2, GridOrder::RightToLeftTopToBottom),
+            (0, 2)
+        );
+        assert_eq!(
+            grid_position(1, 3, 2, GridOrder::RightToLeftTopToBottom),
+            (0, 1)
+        );
+        assert_eq!(
+            grid_position(2, 3, 2, GridOrder::RightToLeftTopToBottom),
+            (0, 0)
+        );
+        assert_eq!(
+            grid_position(3, 3, 2, GridOrder::RightToLeftTopToBottom),
+            (1, 2)
+        );
     }
 
     #[test]
     fn test_grid_position_tblr() {
-        assert_eq!(grid_position(0, 3, 2, GridOrder::TopToBottomLeftToRight), (0, 0));
-        assert_eq!(grid_position(1, 3, 2, GridOrder::TopToBottomLeftToRight), (1, 0));
-        assert_eq!(grid_position(2, 3, 2, GridOrder::TopToBottomLeftToRight), (0, 1));
-        assert_eq!(grid_position(3, 3, 2, GridOrder::TopToBottomLeftToRight), (1, 1));
+        assert_eq!(
+            grid_position(0, 3, 2, GridOrder::TopToBottomLeftToRight),
+            (0, 0)
+        );
+        assert_eq!(
+            grid_position(1, 3, 2, GridOrder::TopToBottomLeftToRight),
+            (1, 0)
+        );
+        assert_eq!(
+            grid_position(2, 3, 2, GridOrder::TopToBottomLeftToRight),
+            (0, 1)
+        );
+        assert_eq!(
+            grid_position(3, 3, 2, GridOrder::TopToBottomLeftToRight),
+            (1, 1)
+        );
     }
 
     #[test]
     fn test_grid_position_tbrl() {
-        assert_eq!(grid_position(0, 3, 2, GridOrder::TopToBottomRightToLeft), (0, 2));
-        assert_eq!(grid_position(1, 3, 2, GridOrder::TopToBottomRightToLeft), (1, 2));
-        assert_eq!(grid_position(2, 3, 2, GridOrder::TopToBottomRightToLeft), (0, 1));
-        assert_eq!(grid_position(3, 3, 2, GridOrder::TopToBottomRightToLeft), (1, 1));
+        assert_eq!(
+            grid_position(0, 3, 2, GridOrder::TopToBottomRightToLeft),
+            (0, 2)
+        );
+        assert_eq!(
+            grid_position(1, 3, 2, GridOrder::TopToBottomRightToLeft),
+            (1, 2)
+        );
+        assert_eq!(
+            grid_position(2, 3, 2, GridOrder::TopToBottomRightToLeft),
+            (0, 1)
+        );
+        assert_eq!(
+            grid_position(3, 3, 2, GridOrder::TopToBottomRightToLeft),
+            (1, 1)
+        );
     }
 
     #[test]
