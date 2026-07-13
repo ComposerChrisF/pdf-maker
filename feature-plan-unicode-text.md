@@ -32,4 +32,4 @@ No new flags for the happy path — existing `--watermark` text should simply re
 
 ## Why Not Python
 
-Text rendering is core pdf-maker capability; a Python post-processor cannot retrofit a CID font into an already-written content stream without reimplementing the font pipeline.  Portfolio rule: feature gaps get plans in the tool’s repo, never one-off scripts.  This also unblocks the ‘okina-codepoint decision documented in `~/Chris/App/Claude/okina-codepoint-verification.md`, and kahakō support is needed regardless of which ‘okina codepoint wins.
+Text rendering is core pdf-maker capability; a Python post-processor cannot retrofit a CID font into an already-written content stream without reimplementing the font pipeline.  Portfolio rule: feature gaps get plans in the tool’s repo, never one-off scripts.  This also unblocks the ‘okina-codepoint decision documented in `~/Chris/Proj/Coding/okina-codepoint-verification.md`, and kahakō support is needed regardless of which ‘okina codepoint wins.
