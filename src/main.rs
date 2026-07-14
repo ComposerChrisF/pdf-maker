@@ -1,13 +1,16 @@
 use clap::{Parser, ValueEnum};
 use lopdf::{Document, Object, Stream, StringFormat, dictionary};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 mod imposition;
+mod page_spec;
+mod paths;
 mod spec_types;
 
 use medpdf::pdf_font::{FontCache, find_font_with_style};
-use medpdf::{AddTextParams, DrawLineParams, DrawRectParams, MedpdfError, parse_page_spec};
+use medpdf::{AddTextParams, DrawLineParams, DrawRectParams, MedpdfError};
 use medpdf::{EncryptionAlgorithm, EncryptionParams};
 use medpdf_image::DrawImageParams;
 use spec_types::{
@@ -16,10 +19,28 @@ use spec_types::{
 };
 
 const EXIT_STATUS_HELP: &str = "EXIT STATUS:
-    0  Success.
-    1  Operation failed (I/O error, malformed input PDF, encryption error,
-       page index out of range, invalid spec). Diagnostic on stderr.
-    2  Invalid command-line arguments (clap parse error).
+    0  Success -- the output was written.  Also returned by --dry-run, which
+       validates and runs the whole pipeline but writes no file.
+    1  Tool error: the operation failed.  I/O error (a missing input PDF or a
+       missing output directory, each named on stderr), malformed input PDF,
+       encryption error, invalid spec, or a page index out of range.  With
+       --json, a machine-readable {\"error\": ...} object is also written to
+       stdout.
+    2  Usage error: invalid command-line arguments (clap parse error).
+
+PAGE SPECS:
+    A page a spec names but the document does not contain is an ERROR (exit 1),
+    never a silent drop: '1,99' against a 2-page PDF fails naming page 99 and
+    the real page count, rather than quietly producing a 1-page PDF.  The same
+    holds for ranges past the end ('1-100'), open ranges past the end ('5-'),
+    and the page targets of --watermark, --draw-rect, --draw-line, --draw-image
+    and --overlay.
+
+PATHS:
+    Input paths (input PDFs, --overlay file, --draw-image file,
+    --pad-last-page-file file) must exist; a missing one exits 1 naming it.
+    The output DIRECTORY must already exist -- pdf-maker writes the output file
+    but never creates a directory.
 ";
 
 /// A command-line tool for advanced manipulation of PDF documents.
@@ -91,6 +112,16 @@ struct Args {
         help = "Booklet imposition for saddle-stitched printing; pass with no value for defaults. Spec keys: paper, orientation, duplex_flip, back, etc. Conflicts with --nup"
     )]
     booklet: Option<BookletSpec>,
+    #[arg(
+        long,
+        help = "Validate and run the whole pipeline but write no output file (exit 0 on success)"
+    )]
+    dry_run: bool,
+    #[arg(
+        long,
+        help = "Print a machine-readable JSON summary on stdout (an error object on failure)"
+    )]
+    json: bool,
     #[arg(
         long,
         help = "Use traditional PDF format for maximum compatibility with older tools"
@@ -202,24 +233,35 @@ fn merge_pages(
     page_ids: &mut Vec<lopdf::ObjectId>,
     inputs: &[String],
     blank_pages: &[BlankPageSpec],
+    input_report: &mut Vec<Value>,
 ) -> Result<(), MedpdfError> {
     eprintln!("\n--- Merging Pages ---");
     for input_chunk in inputs.chunks_exact(2) {
         let source_path = &input_chunk[0];
-        let page_spec = &input_chunk[1];
-        eprintln!("Processing '{}' with pages '{}'...", source_path, page_spec);
+        let spec = &input_chunk[1];
+        eprintln!("Processing '{}' with pages '{}'...", source_path, spec);
         let source_doc = Document::load(source_path)?;
-        let source_page_count = source_doc.page_iter().count();
-        let page_numbers_to_import = parse_page_spec(page_spec, source_page_count as u32)?;
+        let source_page_count = source_doc.page_iter().count() as u32;
+        let page_numbers_to_import = page_spec::expand(
+            spec,
+            source_page_count,
+            &format!("page spec '{spec}' for input PDF '{source_path}'"),
+        )?;
         eprintln!(
             "page_numbers_to_import: {page_numbers_to_import:?}; source_page_count: {source_page_count}"
         );
+        input_report.push(json!({
+            "file": source_path,
+            "spec": spec,
+            "source_page_count": source_page_count,
+            "pages": page_numbers_to_import,
+        }));
 
         let mut copy_cache = std::collections::BTreeMap::new();
-        for page_num in page_numbers_to_import {
+        for page_num in &page_numbers_to_import {
             eprintln!("Copying page: {page_num} from {source_path}");
             let new_page_id =
-                medpdf::copy_page_with_cache(doc, &source_doc, page_num, &mut copy_cache)?;
+                medpdf::copy_page_with_cache(doc, &source_doc, *page_num, &mut copy_cache)?;
             page_ids.push(new_page_id);
         }
     }
@@ -250,7 +292,14 @@ fn apply_overlays(
     for spec in overlays {
         eprintln!("Applying overlay from {}", spec.file.display());
         let overlay_doc = Document::load(&spec.file)?;
-        let target_page_indices = parse_page_spec(&spec.target_pages, page_ids.len() as u32)?;
+        let target_page_indices = page_spec::expand(
+            &spec.target_pages,
+            page_ids.len() as u32,
+            &format!(
+                "--overlay target_pages='{}' (against the output document)",
+                spec.target_pages
+            ),
+        )?;
         for page_index in target_page_indices {
             let dest_page_id = *page_ids.get((page_index - 1) as usize).ok_or_else(|| {
                 MedpdfError::new(format!(
@@ -262,6 +311,13 @@ fn apply_overlays(
         }
     }
     Ok(())
+}
+
+/// Describe a drawing flag's `pages=` target for a page-spec error message.
+/// The pages of a drawing command index into the *output* document, not into
+/// any input file.
+fn target_context(flag: &str, pages: &str) -> String {
+    format!("{flag} pages='{pages}' (against the output document)")
 }
 
 fn apply_drawing_commands(
@@ -281,7 +337,11 @@ fn apply_drawing_commands(
         let layer_name = if layer_over { "over" } else { "under" };
 
         for spec in rects.iter().filter(|s| s.layer_over == layer_over) {
-            let target_page_indices = parse_page_spec(&spec.pages, num_pages)?;
+            let target_page_indices = page_spec::expand(
+                &spec.pages,
+                num_pages,
+                &target_context("--draw-rect", &spec.pages),
+            )?;
             let params = DrawRectParams::new(spec.x, spec.y, spec.w, spec.h)
                 .color(spec.color)
                 .layer_over(layer_over);
@@ -298,7 +358,11 @@ fn apply_drawing_commands(
         }
 
         for spec in lines.iter().filter(|s| s.layer_over == layer_over) {
-            let target_page_indices = parse_page_spec(&spec.pages, num_pages)?;
+            let target_page_indices = page_spec::expand(
+                &spec.pages,
+                num_pages,
+                &target_context("--draw-line", &spec.pages),
+            )?;
             let params = DrawLineParams::new(spec.x1, spec.y1, spec.x2, spec.y2)
                 .line_width(spec.width)
                 .color(spec.color)
@@ -316,7 +380,11 @@ fn apply_drawing_commands(
         }
 
         for spec in images.iter().filter(|s| s.layer_over == layer_over) {
-            let target_page_indices = parse_page_spec(&spec.pages, num_pages)?;
+            let target_page_indices = page_spec::expand(
+                &spec.pages,
+                num_pages,
+                &target_context("--draw-image", &spec.pages),
+            )?;
             let image_data = medpdf_image::load_image(&spec.file)?;
 
             let img_w = image_data.pixel_width() as f32;
@@ -368,7 +436,11 @@ fn apply_drawing_commands(
             let font_path = find_font_with_style(&spec.font, spec.weight, spec.style)?;
             let font_data = font_cache.get_data(&font_path)?;
             let font_name = font_path.get_name();
-            let target_page_indices = parse_page_spec(&spec.pages, num_pages)?;
+            let target_page_indices = page_spec::expand(
+                &spec.pages,
+                num_pages,
+                &target_context("--watermark", &spec.pages),
+            )?;
             let x_points = spec.units.to_points(spec.x);
             let y_points = spec.units.to_points(spec.y);
 
@@ -468,25 +540,62 @@ fn save_document(
 }
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    let args = Args::parse();
+    match run(&args) {
+        Ok(summary) => {
+            if args.json {
+                println!("{summary:#}");
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            if args.json {
+                println!("{:#}", json!({ "error": e.to_string(), "exit_code": 1 }));
+            }
+            std::process::exit(1);
+        }
     }
 }
 
-fn run() -> Result<(), MedpdfError> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let args = Args::parse();
-    if !args.inputs.is_empty() && args.inputs.len() % 2 != 0 {
+/// Validate every caller-asserted path before any work begins, so a typo costs
+/// nothing and -- crucially -- never yields a plausible-but-wrong output.
+fn check_paths(args: &Args) -> Result<(), MedpdfError> {
+    paths::check_output_path(&args.output)?;
+    for chunk in args.inputs.chunks_exact(2) {
+        paths::check_input_file(Path::new(&chunk[0]), "input PDF")?;
+    }
+    for spec in &args.overlay {
+        paths::check_input_file(&spec.file, "--overlay file")?;
+    }
+    for spec in &args.draw_image {
+        paths::check_input_file(&spec.file, "--draw-image file")?;
+    }
+    if let Some(spec) = &args.pad_last_page_file {
+        paths::check_input_file(&spec.file, "--pad-last-page-file file")?;
+    }
+    Ok(())
+}
+
+fn run(args: &Args) -> Result<Value, MedpdfError> {
+    if !args.inputs.is_empty() && !args.inputs.len().is_multiple_of(2) {
         return Err(
             "Input arguments must be in pairs of file paths and page specifications.".into(),
         );
     }
+    check_paths(args)?;
 
     let mut doc = init_document();
     let mut page_ids = Vec::new();
+    let mut input_report: Vec<Value> = Vec::new();
 
-    merge_pages(&mut doc, &mut page_ids, &args.inputs, &args.blank_page)?;
+    merge_pages(
+        &mut doc,
+        &mut page_ids,
+        &args.inputs,
+        &args.blank_page,
+        &mut input_report,
+    )?;
 
     if let Some(ref nup) = args.nup {
         eprintln!("\n--- Applying N-Up Imposition ---");
@@ -530,8 +639,51 @@ fn run() -> Result<(), MedpdfError> {
         }
     };
 
-    save_document(&mut doc, &args.output, args.broad_compatibility, encryption)?;
+    let encrypted = encryption.is_some();
+    let page_count = doc.get_pages().len();
 
-    eprintln!("Operation successful!");
-    Ok(())
+    if args.dry_run {
+        eprintln!(
+            "\nDry run: no file written.  Would have written {} page(s) to {}.",
+            page_count,
+            args.output.display()
+        );
+    } else {
+        save_document(&mut doc, &args.output, args.broad_compatibility, encryption)?;
+        eprintln!("Operation successful!");
+    }
+
+    let bytes = if args.dry_run {
+        None
+    } else {
+        std::fs::metadata(&args.output).ok().map(|m| m.len())
+    };
+    let imposition = if args.nup.is_some() {
+        "nup"
+    } else if args.booklet.is_some() {
+        "booklet"
+    } else {
+        "none"
+    };
+
+    Ok(json!({
+        "tool": "pdf-maker",
+        "version": env!("CARGO_PKG_VERSION"),
+        "output": args.output.display().to_string(),
+        "written": !args.dry_run,
+        "dry_run": args.dry_run,
+        "page_count": page_count,
+        "bytes": bytes,
+        "encrypted": encrypted,
+        "imposition": imposition,
+        "inputs": input_report,
+        "operations": {
+            "blank_pages": args.blank_page.iter().map(|s| s.count as u64).sum::<u64>(),
+            "watermarks": args.watermark.len(),
+            "overlays": args.overlay.len(),
+            "draw_rects": args.draw_rect.len(),
+            "draw_lines": args.draw_line.len(),
+            "draw_images": args.draw_image.len(),
+        },
+    }))
 }

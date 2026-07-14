@@ -22,6 +22,8 @@ pdf-maker/                    # Repository root
 ├── src/
 │   ├── main.rs                # CLI args (clap), orchestrates pipeline
 │   ├── imposition.rs          # N-up and booklet layout
+│   ├── page_spec.rs           # Bounds-checked page-spec expansion (see below)
+│   ├── paths.rs               # Input/output path-contract checks
 │   └── spec_types.rs          # CLI spec types with FromStr (WatermarkSpec, etc.)
 └── tests/
     ├── cli_tests.rs              # CLI integration tests
@@ -52,6 +54,15 @@ pdf-maker/                    # Repository root
 | `main` | CLI args (clap), orchestrates pipeline |
 | `spec_types` | CLI spec types with FromStr for clap integration: `WatermarkSpec`, `OverlaySpec`, `PadToSpec`, `PadFileSpec`, `DrawRectSpec`, `DrawLineSpec`, `DrawImageSpec`, `BlankPageSpec`, `NupSpec`, `BookletSpec` |
 | `imposition` | N-up and booklet layout engine: page placement, scaling, and sheet generation |
+| `page_spec` | Bounds-checked page-spec expansion.  **Always use `page_spec::expand`, never `medpdf::parse_page_spec` directly** |
+| `paths` | Path-contract checks: caller-asserted inputs must exist; the output directory must exist and is never created |
+
+### Contract Invariants (do not regress)
+
+- **Never silently drop a requested page.**  `medpdf::parse_page_spec` _filters_ pages beyond the document, which is why `pdf-maker -o out.pdf two.pdf "1,99"` once produced a 1-page PDF at exit 0 — a plausible-looking output that was not what the caller asked for.  `page_spec::expand` wraps it and makes an out-of-range page a **tool error (exit 1)** naming the page and the document’s real page count.  A page the caller named but the document lacks is a caller-claim/world mismatch, exactly like a nonexistent input path, so it is 1 and not clap’s 2 (`~/.claude/rules/cli-exit-codes.md` § Input and Output Paths).  Any new consumer of a page spec must route through `page_spec::expand`.
+- **Never create a directory.**  Only the terminal output file is written (`--create-destination=none`).  A missing output directory is exit 1 naming it.
+- **`--dry-run` writes no file**, and still performs the full validation pass.
+- **stdout belongs to `--json`.**  All human progress output goes to stderr.
 
 ### CLI Usage
 

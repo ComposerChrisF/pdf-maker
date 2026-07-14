@@ -40,6 +40,8 @@ pdf-maker -o output.pdf report.pdf "1-5" appendix.pdf "2,4,6"
 | `N,M,P` | Specific pages | `"1,3,7"` |
 | Mixed | Combine formats | `"1-3,5,8-10"` |
 
+**A page the spec names but the document does not contain is an error** (exit 1), never a silent drop.  `"1,99"` against a 2-page PDF fails, naming page 99 and the real page count, instead of quietly producing a 1-page PDF.  The same holds for a range past the end (`"1-100"`), an open range past the end (`"5-"`), and the `pages=` target of any drawing or overlay flag.  Use `"all"` when you mean “however many there are”.
+
 ## Options
 
 ### Output
@@ -47,7 +49,45 @@ pdf-maker -o output.pdf report.pdf "1-5" appendix.pdf "2,4,6"
 | Option | Description |
 |--------|-------------|
 | `-o, --output <FILE>` | Output PDF path (required) |
+| `--dry-run` | Run the whole pipeline, validate everything, write no file |
+| `--json` | Machine-readable summary on stdout (an error object on failure) |
 | `--broad-compatibility` | Use traditional PDF format for older viewers |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success — the output was written.  Also `--dry-run`, which writes nothing. |
+| `1` | Tool error: I/O error (missing input PDF, missing output directory), malformed input PDF, encryption error, invalid spec, page index out of range. |
+| `2` | Usage error: invalid command-line arguments (clap parse error). |
+
+pdf-maker is a generator, not an analyzer: it has no findings concept, so codes 3 and 4 of the portfolio table are unused.
+
+### Paths
+
+Input paths (input PDFs, `--overlay file`, `--draw-image file`, `--pad-last-page-file file`) must exist; a missing one exits 1 naming it.  The output **directory** must already exist — pdf-maker writes the output file but never creates a directory.
+
+### Machine-Readable Output
+
+`--json` prints a summary object on stdout (all human progress output stays on stderr):
+
+```json
+{
+  "tool": "pdf-maker",
+  "version": "0.13.0",
+  "output": "out.pdf",
+  "written": true,
+  "dry_run": false,
+  "page_count": 2,
+  "bytes": 1841,
+  "encrypted": false,
+  "imposition": "none",
+  "inputs": [{ "file": "in.pdf", "spec": "1-2", "source_page_count": 5, "pages": [1, 2] }],
+  "operations": { "blank_pages": 0, "watermarks": 0, "overlays": 0, "draw_rects": 0, "draw_lines": 0, "draw_images": 0 }
+}
+```
+
+On failure it prints `{"error": "...", "exit_code": 1}` instead.  (A clap usage error, exit 2, is reported as plain text — clap owns that path.)
 
 ### Watermarks
 
@@ -188,7 +228,7 @@ Built on [medpdf](https://github.com/ComposerChrisF/medpdf), a medium-level PDF 
 
 ## Related Projects
 
-- [pdf-dump](https://github.com/ComposerChrisF/pdf-dump) — CLI tool for inspecting and debugging PDF internals. Essential for debugging medpdf and pdf-maker
+- [pdf-dump](https://github.com/ComposerChrisF/pdf-dump) — CLI tool for inspecting and debugging PDF internals.  Essential for debugging medpdf and pdf-maker
 - [medpdf](https://github.com/ComposerChrisF/medpdf) — Medium-level PDF Rust API (includes medpdf-image for image embedding) as a higher-level abstraction over lopdf
 
 ## License

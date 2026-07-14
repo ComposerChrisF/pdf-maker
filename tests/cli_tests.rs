@@ -335,8 +335,13 @@ fn cli_nonexistent_input_file() {
         .output()
         .unwrap();
 
-    // Assert
-    assert!(!result.status.success());
+    // Assert: a missing caller-asserted input is exit 1, naming the path.
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("/nonexistent/file.pdf"),
+        "stderr must name the missing input: {stderr}"
+    );
 }
 
 #[test]
@@ -529,6 +534,402 @@ fn cli_nup_2x2() {
     assert!(status.success());
     let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
+}
+
+// --- Out-of-range page specs must ERROR, never be silently dropped ---
+//
+// Regression tests for the silent-wrong-output bug: `parse_page_spec` filtered
+// pages beyond the document, so `1,99` against a 2-page PDF produced a 1-page
+// PDF at exit 0.  Every case below asserts the exit CODE and, where a file could
+// still be produced, the page count.
+
+/// Run pdf-maker against an `n`-page input with the given page spec, returning
+/// the exit code and the page count of any output actually produced.
+fn merge_with_spec(source_pages: u32, spec: &str) -> (Option<i32>, Option<u32>) {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, source_pages);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            spec,
+        ])
+        .output()
+        .unwrap();
+
+    let pages = if output.exists() {
+        pdf_dump_page_count(&output)
+    } else {
+        None
+    };
+    (result.status.code(), pages)
+}
+
+#[test]
+fn cli_out_of_range_page_mixed_with_valid_page_errors() {
+    // The headline bug: this used to exit 0 with a 1-page PDF.
+    let (code, pages) = merge_with_spec(2, "1,99");
+    assert_eq!(code, Some(1), "out-of-range page must be a tool error");
+    assert_eq!(pages, None, "no output file may be produced");
+}
+
+#[test]
+fn cli_out_of_range_page_names_the_page_and_the_page_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "1,99",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("99"),
+        "must name the offending page: {stderr}"
+    );
+    assert!(
+        stderr.contains("2 page(s)"),
+        "must name the document's real page count: {stderr}"
+    );
+}
+
+#[test]
+fn cli_wholly_out_of_range_spec_errors() {
+    let (code, pages) = merge_with_spec(2, "99");
+    assert_eq!(code, Some(1));
+    assert_eq!(pages, None);
+}
+
+#[test]
+fn cli_range_past_the_end_errors_instead_of_clamping() {
+    // "1-100" against a 2-page doc used to yield 2 pages at exit 0.
+    let (code, pages) = merge_with_spec(2, "1-100");
+    assert_eq!(code, Some(1));
+    assert_eq!(pages, None);
+}
+
+#[test]
+fn cli_open_ended_range_past_the_end_errors() {
+    // "5-" against a 2-page doc used to select nothing.
+    let (code, pages) = merge_with_spec(2, "5-");
+    assert_eq!(code, Some(1));
+    assert_eq!(pages, None);
+}
+
+#[test]
+fn cli_open_start_range_past_the_end_errors() {
+    // A bare "-9" cannot reach the page-spec parser: clap eats a leading dash as
+    // a flag and exits 2, which is correctly clap's territory.  "1,-9" carries
+    // the same open-start range through argv, and must error on page 9.
+    let (code, pages) = merge_with_spec(2, "1,-9");
+    assert_eq!(code, Some(1));
+    assert_eq!(pages, None);
+}
+
+#[test]
+fn cli_open_ended_range_within_the_document_still_works() {
+    let (code, pages) = merge_with_spec(3, "2-");
+    assert_eq!(code, Some(0));
+    assert_eq!(pages, Some(2));
+}
+
+#[test]
+fn cli_all_still_works() {
+    let (code, pages) = merge_with_spec(3, "all");
+    assert_eq!(code, Some(0));
+    assert_eq!(pages, Some(3));
+}
+
+#[test]
+fn cli_out_of_range_page_in_a_second_input_errors() {
+    // The whole second input used to be dropped silently, leaving a 1-page PDF.
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "1",
+            input.to_str().unwrap(),
+            "5-",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!output.exists(), "no output file may be produced");
+}
+
+#[test]
+fn cli_watermark_targeting_a_nonexistent_page_errors() {
+    // Used to exit 0 having applied no watermark at all.
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--watermark",
+            "text=DRAFT,font=@Helvetica,x=1,y=1,pages=99",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!output.exists());
+}
+
+#[test]
+fn cli_draw_rect_targeting_a_nonexistent_page_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--draw-rect",
+            "x=1,y=1,w=10,h=10,pages=7",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!output.exists());
+}
+
+#[test]
+fn cli_overlay_targeting_a_nonexistent_page_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--overlay",
+            &format!("file={},src_page=1,target_pages=99", input.display()),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!output.exists());
+}
+
+// --- Path contract (~/.claude/rules/cli-exit-codes.md) ---
+
+#[test]
+fn cli_missing_output_directory_errors_and_is_not_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 1);
+    let missing_dir = dir.path().join("no-such-dir");
+    let output = missing_dir.join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("no-such-dir"),
+        "stderr must name the missing output directory: {stderr}"
+    );
+    assert!(
+        !missing_dir.exists(),
+        "pdf-maker must never create the output directory"
+    );
+}
+
+#[test]
+fn cli_missing_overlay_file_errors_naming_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 1);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--overlay",
+            "file=/nonexistent/overlay.pdf,src_page=1",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("/nonexistent/overlay.pdf"), "{stderr}");
+    assert!(!output.exists());
+}
+
+// --- --dry-run ---
+
+#[test]
+fn cli_dry_run_writes_no_file_and_exits_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 3);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0));
+    assert!(!output.exists(), "--dry-run must create NO file");
+}
+
+#[test]
+fn cli_dry_run_still_catches_an_out_of_range_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "1,99",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!output.exists());
+}
+
+// --- --json ---
+
+#[test]
+fn cli_json_summary_reports_the_page_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 3);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "2-3",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0));
+    let json: serde_json::Value = serde_json::from_slice(&result.stdout).expect("stdout is JSON");
+    assert_eq!(json["page_count"], 2);
+    assert_eq!(json["written"], true);
+    assert_eq!(json["dry_run"], false);
+    assert_eq!(json["inputs"][0]["pages"], serde_json::json!([2, 3]));
+    assert!(output.exists());
+}
+
+#[test]
+fn cli_json_dry_run_reports_written_false() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "all",
+            "--json",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0));
+    let json: serde_json::Value = serde_json::from_slice(&result.stdout).expect("stdout is JSON");
+    assert_eq!(json["written"], false);
+    assert_eq!(json["dry_run"], true);
+    assert_eq!(json["page_count"], 2);
+    assert_eq!(json["bytes"], serde_json::Value::Null);
+    assert!(!output.exists());
+}
+
+#[test]
+fn cli_json_error_object_on_an_out_of_range_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.pdf");
+    create_test_pdf(&input, 2);
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "1,99",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_slice(&result.stdout).expect("stdout is JSON");
+    assert_eq!(json["exit_code"], 1);
+    let error = json["error"].as_str().expect("error is a string");
+    assert!(error.contains("99"), "{error}");
 }
 
 #[test]
