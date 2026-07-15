@@ -6,3 +6,4 @@ out*.pdf
 .cargo/config.toml
 .claude/settings.local.json
 .publish-bin.toml
+.install-bin.toml
