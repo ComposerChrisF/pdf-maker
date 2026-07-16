@@ -1,6 +1,6 @@
 [package]
 name = "pdf-maker"
-version = "0.13.0"
+version = "0.13.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tool for merging, watermarking, and manipulating PDF files"
@@ -13,7 +13,7 @@ name = "pdf-maker"
 path = "src/main.rs"
 
 [dependencies]
-medpdf = { version = "0.10.0", path = "../medpdf/medpdf" }
+medpdf = { version = "0.11.0", path = "../medpdf/medpdf" }
 medpdf-image = { version = "0.4.1", path = "../medpdf/medpdf-image" }
 lopdf = "0.42.0"
 clap = { version = "4.5.44", features = ["derive", "string"] }
