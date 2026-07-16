@@ -14,7 +14,7 @@ Never commit changes to git without permission from the user.
 
 ## Repo Structure
 
-This is a standalone crate (no workspace).  It depends on `medpdf` and `medpdf-image` from crates.io.
+This is a standalone crate (no workspace).  It depends on `medpdf` and `medpdf-image`, sibling crates developed in the adjacent `../medpdf` workspace and consumed here as `version + path` dependencies: local builds compile the path checkout, while the version requirement governs a crates.io publish.  See `PUBLISHING.md` (and `../medpdf/PUBLISHING.md`) for how the family is released.
 
 ```
 pdf-maker/                    # Repository root
