@@ -1,12 +1,13 @@
 //! Bounds-checked page-spec expansion.
 //!
-//! `medpdf::parse_page_spec` **filters** pages that lie beyond the document: a
-//! spec of `1,99` against a 2-page PDF quietly yields `[1]`, so pdf-maker used
-//! to emit a plausible-looking 1-page PDF and exit 0.  That is the silent-wrong-
-//! output failure class — the caller asked for two pages and got one, with no
-//! diagnostic.  This module wraps the medpdf parser and turns the silent drop
-//! into a loud error naming the offending page(s) and the document's real page
-//! count.
+//! Historically `medpdf::parse_page_spec` **filtered** pages beyond the document
+//! (`1,99` against a 2-page PDF quietly yielded `[1]`), so pdf-maker used to emit
+//! a plausible-looking 1-page PDF and exit 0 — the silent-wrong-output failure
+//! class.  medpdf now errors on out-of-range pages itself (bug-0021), but on the
+//! *first* one only.  This module keeps its own up-front scan so it can name
+//! *every* out-of-range page the caller requested, together with the document's
+//! real page count and the `what` context, before delegating grammar validation
+//! and expansion to medpdf.
 //!
 //! A page a caller explicitly named but the document does not contain is a
 //! caller-claim/world mismatch (the same shape as a nonexistent input path), so
@@ -25,13 +26,13 @@ use medpdf::{MedpdfError, Result, parse_page_spec};
 /// Grammar validation (syntax, page 0, inverted ranges) is delegated to
 /// [`medpdf::parse_page_spec`]; only the bounds check is added here.
 pub fn expand(spec: &str, page_count: u32, what: &str) -> Result<Vec<u32>> {
-    let pages = parse_page_spec(spec, page_count)?;
-
-    // Every integer literal in the page-spec grammar is a page number, so
-    // scanning for digit runs finds exactly the pages the caller named -- open
-    // ranges ("5-", "-9") included, because their explicit bound is one of these
-    // runs.  The parse above has already rejected anything outside that grammar,
-    // including integers too large for u32.
+    // Scan for out-of-range pages FIRST, before delegating to medpdf. medpdf's
+    // `parse_page_spec` itself errors on the first out-of-range page (bug-0021), which
+    // would lose both the remaining offending pages and the `what` context. Doing
+    // our own scan up front lets us keep naming *every* out-of-range page with that
+    // context. Every integer literal in the page-spec grammar is a page number, so
+    // scanning digit runs finds exactly the pages the caller named -- open ranges ("5-",
+    // "-9") included, because their explicit bound is one of these runs.
     let mut out_of_range: Vec<u32> = Vec::new();
     for run in spec
         .split(|c: char| !c.is_ascii_digit())
@@ -63,6 +64,11 @@ pub fn expand(spec: &str, page_count: u32, what: &str) -> Result<Vec<u32>> {
              Requested pages are never silently dropped -- correct the spec (or use 'all')."
         )));
     }
+
+    // No out-of-range pages: medpdf validates the grammar (syntax, page 0, inverted
+    // ranges) and expands. With the scan above clean, medpdf will not itself hit its
+    // out-of-range error path here.
+    let pages = parse_page_spec(spec, page_count)?;
 
     if pages.is_empty() {
         return Err(MedpdfError::new(format!(

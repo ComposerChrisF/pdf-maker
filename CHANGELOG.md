@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-07-24
+### Changed
+- Adapt to medpdf 0.12.0: `parse_page_spec` now errors on out-of-range pages, so
+  `page_spec::expand` scans for out-of-range pages before delegating to medpdf,
+  preserving its “name every out-of-range page” error message.  Bump the
+  `medpdf` dependency to 0.12.
+
 ## [0.13.1] - 2026-07-15
 ### Added
 - Adopt `medpdf` 0.11.0, gaining Unicode text via composite fonts — watermark

@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "medpdf"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "allsorts",
  "font-kit",
@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "medpdf-image"
-version = "0.4.3"
+version = "0.4.7"
 dependencies = [
  "flate2",
  "image",
@@ -1512,7 +1512,7 @@ dependencies = [
 
 [[package]]
 name = "pdf-maker"
-version = "0.13.1"
+version = "0.13.2"
 dependencies = [
  "chrono",
  "clap",
