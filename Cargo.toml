@@ -7,6 +7,10 @@ description = "CLI tool for merging, watermarking, and manipulating PDF files"
 repository = "https://github.com/ComposerChrisF/pdf-maker"
 keywords = ["pdf", "merge", "watermark", "cli"]
 categories = ["command-line-utilities"]
+# Working-tree artifacts, not part of the published crate.  bugs/ and plans/ are
+# delete-on-resolve directories (~/.claude/rules/bug-reports.md, plan-files.md);
+# without this they ship in the tarball.
+exclude = ["CLAUDE.md", ".github/", ".claude/", "bugs/", "plans/"]
 
 [[bin]]
 name = "pdf-maker"
