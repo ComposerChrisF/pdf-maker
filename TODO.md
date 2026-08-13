@@ -39,8 +39,19 @@ Suggested order — high severity and shared code first; each fix lands with a t
 ### Phase E — documentation (last, once behavior settles)
 
 - [ ] **bug-0012** — the big spec-drift pass over README.md and CLAUDE.md (imposition wholly undocumented, `--blank-page`/`--no-subset`/encryption flags missing, watermark units/params/colors incomplete, pipeline diagrams missing the imposition phase, CLAUDE.md’s stale `spec_types.rs` tree entry).  Doc-only; written last so it describes the settled behavior, including the Phase A rulings.
-- [ ] After release: refresh `~/.claude/rules/pdf-tools.md` (outside this repo — it still describes v0.13.0 and predates imposition).
+- [ ] After release: refresh `~/.claude/skills/pdf-tools/SKILL.md` (outside this repo — it still describes v0.13.0 and predates imposition).  The reference moved out of `~/.claude/rules/pdf-tools.md` into that skill on 2026-08-04; the rule file no longer carries flag tables, so refreshing it is not the fix.
 
 ### Sequencing rationale
 
 Decisions before dependent code (a wrong guess costs a re-release); silent-wrong-output fixes before hygiene; docs after behavior so they are written once.  Fixed bugs: delete the report in the fixing commit and name the ID in the message, per the bug-reports rule.  Behavior changes here warrant a minor version bump (v0.14.0) via `/commit-rust-cli`, which handles the bump, format, gate, and push.
+
+## Open plans
+
+Proposed changes — options, not obligations — in `plans/`, numbered per `~/.claude/rules/plan-files.md`.  TODO.md is the ordering index for plans as well as bugs; **the order below is sequencing, not a priority ruling**, and rejecting a plan is a normal exit.  Both landed 2026-08-12 as the surviving residue of the legacy `feature-plan-*.md` migration.
+
+- [ ] **plan-0001** — `--lossy-text`, exposing medpdf’s existing `WatermarkParams::lossy_text` opt-out.  Small: one flag, no medpdf change for the stderr-warning form.  Worth doing early because the current error message advises “enable lossy text substitution” and names no flag, so the advice is unactionable today.  Carries one decision for Chris (global flag vs. per-watermark key; the plan recommends global).
+- [ ] **plan-0002** — `--recompress-images`, exposing the shipped `medpdf_image::recompress::recompress_images()`.  Larger, and the scoping design is the hard part — pdf-orchestrator shipped the same feature and carries two open bugs on exactly that (bug-0037 scope, bug-0035 junk-enables-lossy).  Read those before implementing.
+
+## Test-coverage gaps
+
+- [ ] **Overlay round-trip at the CLI level.**  `cli_overlay_applied` asserts only the output page count, so it would still pass if the overlaid content vanished on reload — which is precisely the failure the medpdf `/Length` fix repaired.  medpdf pins its side (`overlay_length_regression_tests.rs`, `no_raw_stream_content_assignment.rs`); pdf-maker never added the matching CLI test its plan called for.  Assert the overlaid _text_ survives, reading with `pdf-dump --text --strict` so a future regression cannot hide behind pdf-dump’s lenient `/Length` recovery.
