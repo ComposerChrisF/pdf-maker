@@ -24,6 +24,23 @@
 //! was the wrong design; these checks are now self-contained. (A bug report for
 //! the `pdf-dump` regression lives in that repo.)
 //!
+//! ## Not to be confused with the overlay `/Length` bug (fixed)
+//!
+//! A separate defect once made overlay output unreadable in a way that looks
+//! similar from the outside — a stream whose body silently vanishes on reload —
+//! and the two were conflated once already. That one was NOT an ObjStm or an
+//! encryption problem: `medpdf`'s `modify_content_stream` assigned re-encoded
+//! bytes straight to `Stream::content`, bypassing `set_content` and leaving
+//! `/Length` stale, so lopdf's length-based reader could not find `endstream`
+//! and dropped the object to a bare dictionary. It reproduced on plain,
+//! unencrypted output. Fixed in medpdf (`pdf_overlay_helpers.rs` now uses
+//! `set_content`) and pinned there by `overlay_length_regression_tests.rs` plus
+//! `no_raw_stream_content_assignment.rs`, which fails if a raw `.content =`
+//! assignment reappears. pdf-maker needed no change beyond the dependency bump.
+//!
+//! The distinguishing question: does it reproduce WITHOUT encryption? If yes it
+//! is a `/Length` problem, not #479.
+//!
 //! ## Canary behavior — READ THIS IF `save_modern_objstm_is_unencrypted` FAILS
 //!
 //! That test PASSES while the bug exists. If it FAILS, the ObjStm is no longer

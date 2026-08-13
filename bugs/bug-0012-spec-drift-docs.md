@@ -27,7 +27,9 @@ Git history tells the story: `--nup` and `--booklet` shipped across `56f7b01` (v
 
 ### Outside the repo (pointer only — not fixable in this repo)
 
-`~/.claude/rules/pdf-tools.md` describes pdf-maker v0.13.0 and also predates imposition (no `--nup`/`--booklet` at all) and the extended color set.  After the fixes above land and a version ships, that rule file needs a matching refresh — flagged here so the drift is not forgotten, per the rule’s own warning that stale restatements are worse than none.
+`~/.claude/skills/pdf-tools/SKILL.md` describes pdf-maker v0.13.0 and also predates imposition (no `--nup`/`--booklet` at all) and the extended color set.  After the fixes above land and a version ships, that reference needs a matching refresh — flagged here so the drift is not forgotten, per the rule’s own warning that stale restatements are worse than none.
+
+Amended 2026-08-04: the flag reference moved out of `~/.claude/rules/pdf-tools.md` into the `pdf-tools` skill at the path above.  The rule file now holds only the use-the-CLI mandate and the feature-plan fallback, so the refresh belongs in the skill; editing the rule file would not fix this drift.
 
 ## Reproduction
 

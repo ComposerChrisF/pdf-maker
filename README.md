@@ -124,6 +124,25 @@ Add watermarks behind page content using `layer=under`:
 
 Built-in fonts (PDF 1.7): `Times-Roman`, `Helvetica`, `Courier`, `Symbol`, `Times-Bold`, `Helvetica-Bold`, `Courier-Bold`, `ZapfDingbats`, `Times-Italic`, `Helvetica-Oblique`, `Courier-Oblique`, `Times-BoldItalic`, `Helvetica-BoldOblique`, `Courier-BoldOblique`
 
+**Unicode text beyond WinAnsi:**
+
+Watermark text is not limited to Latin-1.  An **embedded** font — a system font name or a `.ttf`/`.otf` path — renders the full Unicode range its glyphs cover, via a Type0/CIDFontType2 composite font with Identity-H encoding and a ToUnicode CMap, so the text also extracts cleanly afterward:
+
+```bash
+pdf-maker -o out.pdf in.pdf all \
+  --watermark "text=La‘i ā ē ī ō ū,font=/Library/Fonts/CrimsonPro-Black.ttf,size=24,x=1,y=5,units=in"
+
+pdf-dump out.pdf --text        # → La‘i ā ē ī ō ū
+```
+
+The **built-in** fonts (`@Helvetica`, `@Courier`, `@Times`, …) are structurally bound to WinAnsi (CP1252) and cannot carry these characters.  Rather than substitute `?`, pdf-maker refuses the job — exit 1, naming every offending character and the font:
+
+```
+Error: text contains character(s) not representable with font 'Helvetica': U+02BB 'ʻ', U+0101 'ā', U+0113 'ē'. Use an embedded system font that includes these glyphs, or enable lossy text substitution.
+```
+
+An embedded font that lacks a needed glyph fails the same way.  Two current limits: a `.ttc`/`.otc` font _collection_ cannot be embedded (supply a single-face `.ttf`/`.otf`), and composite fonts are embedded in full — `--no-subset` is moot for them, so a Unicode watermark carries the whole face.
+
 ### Overlays
 
 Overlay content from another PDF onto pages:
