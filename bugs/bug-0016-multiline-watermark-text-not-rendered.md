@@ -48,7 +48,7 @@ basic `\n`-split with metrics-based leading and block alignment; **yes** for
 caller-controlled leading, word-wrap, and truncation, which add `AddTextParams` fields) —
 lives in:
 
-**`~/Chris/App/Rust/Pdf/medpdf/feature-plan-multiline-watermark-text.md`**
+**`~/Chris/App/Rust/Pdf/medpdf/plans/plan-0002-multiline-watermark-text.md`** — cite it as _medpdf `plan-0002`_, since a bare `plan-0002` is ambiguous across repos.  (Moved there 2026-08-12 from `medpdf/feature-plan-multiline-watermark-text.md` by the plans rollout; content unchanged.)
 
 Recommended path: implement Tier 1 (`\n`-split, no API change) in medpdf, after which
 pdf-maker’s existing `\n` escape works with **no pdf-maker change**.  Until then, pdf-maker
