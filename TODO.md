@@ -49,8 +49,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Seventeen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0007
-(fixed 2026-09-09 by medpdf 0.13.0 and deleted per the bug-reports lifecycle).  (bug-0016 was filed
+**Sixteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0007 and
+bug-0016 (both fixed 2026-09-09, by medpdf 0.13.0 and 0.14.0 respectively, and deleted per the
+bug-reports lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -133,10 +134,10 @@ rulings themselves are settled and no longer block anything.
   `max_dpi` below 1.0 — including 0 — is an invalid-value error.  The existing
   `test_draw_image_spec_max_dpi_zero`, which asserts today’s acceptance of `0`, gets rewritten
   rather than deleted: it becomes the assertion that `0` is now rejected and `none` accepted.
-- [x] **bug-0016** — **the fix is a medpdf feature.**  Multi-line watermark text belongs where
-  the font metrics are.  Unblocks medpdf `plan-0002`, whose Tier 1 (`\n`-split, metrics-based
-  leading, block-level valign) needs no API change and makes pdf-maker’s documented escapes
-  render.  The medpdf session has been told.
+- [x] **bug-0016 — RULED _and_ SHIPPED.**  Chris ruled it a medpdf feature; medpdf 0.14.0
+  delivered plan-0002 Tier 1 the same day, and pdf-maker needed no change beyond the floor.
+  Verified on both text paths and the report is deleted.  One residue moved to bug-0012: `\n`
+  and `\t` must not be documented as one feature, because only `\n` renders.
 - [ ] **bug-0001** — **needs Chris at a printer.**  Verification kit generated 2026-09-09 in
   `bugs/bug-0001/`; read `bugs/bug-0001/HOW-TO-VERIFY.md` first.  Print
   `booklet-SHORT-edge.pdf` with the printer set to **Short-Edge** binding and
@@ -176,15 +177,12 @@ Each fix lands with a test that fails when the fix is reverted.
 - [ ] **bug-0003** implementation — needs a medpdf API change (duplicates are invisible to
   pdf-maker today); coordinate with the sibling `../medpdf` workspace and its release flow
   (`PUBLISHING.md`).
-- [ ] **bug-0016** implementation — medpdf-side if that is the ruling; batch it with any other
-  medpdf change so the family releases once.
 - [ ] **bug-0008** implementation — restrict `n` to `1, 2, 4, 6, 8, 9, 16`, plus the
   `auto_grid(2)` change to side-by-side landscape **once Chris confirms**, since it alters
   existing output.  Two unit tests pin the old value (`layout.rs:301`, `layout.rs:364`).
 - [ ] **bug-0009 item 4** implementation — `max_dpi=none` as the public spelling, numeric
   values below 1.0 rejected, `test_draw_image_spec_max_dpi_zero` rewritten rather than deleted.
-- [ ] **bug-0016** — nothing to do here; medpdf owns the fix and has been told.  This report
-  closes when their `plan-0002` Tier 1 ships and the documented escapes render.
+- [x] **bug-0016 — done**, see Phase A.
 - [ ] **bug-0002** implementation (behavior change; note in CHANGELOG).
 - [ ] **bug-0001** implementation (only after physical confirmation).
 
@@ -205,7 +203,9 @@ Each fix lands with a test that fails when the fix is reverted.
   imposition entirely, though it runs between merge and overlays (`src/main.rs:601`).
 - [ ] After release: refresh `~/.claude/skills/pdf-tools/SKILL.md` (outside this repo).  It was
   brought up to v0.13.2 with the imposition tables on 2026-09-09; `--tile` and the Phase A
-  rulings will need another pass.
+  rulings will need another pass.  **Name `\t` specifically when it happens:** the skill’s
+  “Text escaping” line lists `\n` and `\t` together, which became half true when medpdf
+  0.14.0 made `\n` render and left `\t` with no tab-stop model.
 
 ### Sequencing rationale
 

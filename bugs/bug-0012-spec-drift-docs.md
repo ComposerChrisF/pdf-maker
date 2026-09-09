@@ -68,3 +68,28 @@ a dry run and a real run agree about geometry by construction, which is not true
 tool — the pdf-orchestrator session runs a separate simulation against a substituted page size
 and has five open parity bugs as a consequence.  Worth one sentence in the README saying the
 property is deliberate, so nobody later “optimizes” `--dry-run` into a second code path.
+
+## Additional item (added 2026-09-09): watermark text escapes are undocumented, and `\n` / `\t` are not one feature
+
+Neither `--help` nor `README.md` documents the `--watermark` text escapes **at all** — checked
+2026-09-09 — even though `unescape_text` supports `\,`, `\n`, `\t`, `\\`, `\uXXXX` and
+`\U{XXXXX}`.  The only user-facing description lives in
+`~/.claude/skills/pdf-tools/SKILL.md`, outside this repo, which is the wrong home for a
+tool’s own interface.
+
+When the doc pass adds them, **do not present `\n` and `\t` as a pair.**  They decode
+identically and behave differently:
+
+- **`\n` renders.**  Since medpdf 0.14.0 (its plan-0002 Tier 1), `add_text_params` splits on
+  `\n`, `\r\n` and a lone `\r`, and draws each line on its own baseline — leading from the
+  embedded face’s `ascender - descender + line_gap`, or `font_size x 1.2` for a built-in
+  Standard-14.  Verified 2026-09-09: `text=Line 1\nLine 2` at size 24 emits `(Line 1) Tj`,
+  `0 -28.8 Td`, `(Line 2) Tj`.
+- **`\t` does not.**  There is no tab-stop model.  A decoded tab is dropped on the WinAnsi
+  path and rejected on the composite path.
+
+Two further behaviors worth stating rather than leaving to be discovered, both decided in
+medpdf 0.14.0: a trailing newline yields a trailing **empty line** (`"a\n"` is two lines, so
+block height does not depend on invisible whitespace), and leading is not caller-settable —
+there is no wrap or truncation, those being medpdf’s Tiers 2-3, which pdf-maker is explicitly
+not requesting.

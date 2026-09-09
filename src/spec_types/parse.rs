@@ -65,6 +65,14 @@ pub(super) fn strip_quotes(s: &str) -> &str {
 /// - `\n` → newline, `\t` → tab
 /// - `\\` → literal backslash
 /// - Any other `\X` → left as-is (backward compatible)
+///
+/// **`\n` and `\t` decode alike here but do not render alike downstream.**
+/// Since medpdf 0.14.0, `add_text_params` splits watermark text on `\n`
+/// (and `\r\n`, and a lone `\r`) and draws each line on its own baseline, so a
+/// newline is a real line break. There is still no tab-stop model: a decoded
+/// tab is dropped on the WinAnsi path and rejected on the composite path.
+/// So do not describe the two as one feature in user-facing documentation —
+/// see bug-0012, which carries the doc-pass item.
 pub(super) fn unescape_text(s: &str) -> Result<String, String> {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();

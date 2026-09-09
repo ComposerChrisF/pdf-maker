@@ -51,6 +51,35 @@
 //!   2. Invert this test to assert the ObjStm IS encrypted, and rename it to
 //!      e.g. `save_modern_objstm_is_encrypted`.
 //!   3. Update this module's docs.
+//!
+//! ## Upstream status, and how NOT to retire this (added 2026-09-09)
+//!
+//! **#479 is closed upstream but not yet released.** It was fixed 2026-08-03 by
+//! lopdf PR #546, which internalizes exactly the workaround below: `save_modern`
+//! detects `is_encrypted()` and falls back to writing objects individually. The
+//! fix merged *after* 0.44.0 and is in no published crate version, so there is
+//! nothing to bump to yet. This crate is on 0.42.0.
+//!
+//! **Retiring this buys a deleted branch, not smaller files.** PR #546 does not
+//! make ObjStms work under encryption — encrypted output gains no object-stream
+//! compression from it. If you expect a size win when you adopt it, you will not
+//! get one, and you may go looking for a second bug that does not exist.
+//!
+//! **Do not remove the workaround on a release note alone. Verify the CONTENT
+//! reads back correct — not that the file loads.** This is borrowed scar tissue,
+//! not caution in the abstract: the pdf-orchestrator session removed their
+//! equivalent branch at their v0.14.0 on lopdf 0.42's *claimed* fix. 0.42 had not
+//! fixed #479 — it had made it **silent**. A file that previously hard-errored now
+//! loaded cleanly with garbage `/Info`. That slipped past a hard-error-only test
+//! and corrupted real encrypted PDFs; their v0.14.1 put the workaround back.
+//!
+//! Note which version this crate is pinned to: **0.42.0 — the release that made
+//! the failure silent.** The only reason that is not our problem is the
+//! `|| encryption.is_some()` clause below. So the canary above is necessary but
+//! not sufficient: it detects the ObjStm becoming ciphertext, which is the right
+//! signal, but any retirement should ALSO round-trip an encrypted document and
+//! assert its metadata reads back byte-correct, because "loads cleanly" is
+//! precisely the state 0.42 shipped.
 
 use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use medpdf::{EncryptionParams, encrypt_document};

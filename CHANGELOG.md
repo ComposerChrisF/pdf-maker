@@ -5,8 +5,22 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
-## [Unreleased]
+## [0.15.0] — 2026-09-09
 ### Fixed
+- **Multi-line watermark text now renders** (bug-0016).  `--watermark "text=Line
+  1\nLine 2,..."` draws two baselines instead of one concatenated line.  Fixed
+  upstream in medpdf 0.14.0; pdf-maker needed no change beyond the dependency
+  floor, since `unescape_text` already decoded the escape correctly.  Note the
+  pre-fix symptom differed by path: on the WinAnsi path the newline collapsed
+  silently, while on the composite path (any non-WinAnsi character, e.g. a
+  Hawaiian ‘okina) it raised `UnrepresentableText` and **failed the whole run**.
+  Verified on both: `text=Line 1\nLine 2` at size 24 emits `(Line 1) Tj`,
+  `0 -28.8 Td`, `(Line 2) Tj`; `text=Ka‘ū\nHawai‘i` with an embedded font
+  extracts as two lines with diacritics intact.
+- `\t` is **not** fixed by the above and is not a line break — there is no
+  tab-stop model, and a decoded tab is dropped on the WinAnsi path and rejected
+  on the composite one.  Do not describe the two escapes as one feature
+  (bug-0012 carries the doc item).
 - **`--booklet flip=short_edge` placed every back page completely off the sheet.**
   Introduced by adopting medpdf 0.13.0 and caught before release.  `apply_booklet`
   passed `(cx + w, cy + h)` for the rotated back side, hand-compensating the
@@ -23,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (bug-0007), fixed upstream in medpdf 0.13.0.
 
 ### Changed
+- Adopt medpdf 0.14.0 and raise the requirement to `0.14`.  Single-line output is
+  unchanged — verified by regenerating a 12-watermark, 4-page document and
+  diffing every text-positioning operator against the 0.13.2 output: identical.
 - Adopt medpdf 0.13.0 and raise the requirement to `0.13`.  `place_page` now
   places by **visible bounding box** — `(x, y, scale)` alone determines where a
   page lands, for any MediaBox origin and any rotation — and honors the source
