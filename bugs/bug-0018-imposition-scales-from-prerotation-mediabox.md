@@ -58,6 +58,33 @@ There is no `/Rotate` fixture in this repo and `--blank-page` cannot make one.  
 
 Pin the same invariant for `apply_booklet`.
 
+## Second site: `--pad-to` sizes its pad pages the same way
+
+Found 2026-09-09 while answering the pdf-orchestrator session’s question about drawing onto
+pages pdf-maker did not create.  Same root cause, different function, so it is folded in here
+rather than given an ID of its own.
+
+`src/main.rs:496` measures the **last page** with `get_page_media_box` to decide how big the
+blank pages appended by `--pad-to` should be:
+
+```rust
+let media_box = medpdf::get_page_media_box(doc, last_page_id)...;
+let width  = media_box[2] - media_box[0];
+let height = media_box[3] - media_box[1];
+```
+
+On a last page carrying `/Rotate 90`, that is the pre-rotation box, so the appended blank comes
+out portrait behind a page that displays landscape — a pad page the wrong way round, at exit 0.
+The fix is the same one-word substitution: `get_page_effective_size`.
+
+Also code-trace, not reproduced, and it wants the same `/Rotate 90` fixture.
+
+**Not affected, checked in the same pass:** the `--watermark` / `--draw-rect` / `--draw-line` /
+`--draw-image` family takes absolute caller coordinates and never measures the page — with the
+exception of `h_align` and `v_align`, which resolve inside medpdf against whatever box medpdf
+consults.  That one is medpdf’s question, not this report’s, and it is the same shape as
+pdf-orchestrator’s bug-0050.
+
 ## Related
 
 - **medpdf bug-0023 / bug-0024**, fixed in medpdf 0.13.0 — the contract change that exposed this.

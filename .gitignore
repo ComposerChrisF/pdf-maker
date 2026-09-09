@@ -7,6 +7,8 @@ out*.pdf
 # scratch-PDF patterns above would otherwise silently swallow files like
 # bugs/bug-0001/input-4page.pdf.
 !bugs/**
+# ...except build output from a repro crate, the one ignore the rule permits there.
+bugs/**/target/
 .cargo/config.toml
 .claude/settings.local.json
 .publish-bin.toml
