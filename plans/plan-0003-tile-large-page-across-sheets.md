@@ -196,6 +196,25 @@ check, and above by the non-positive-step check.
   goes non-positive there — and the same for rows.
 - **`scale` applies to the source before the grid is computed**, or the sheet count and the
   placement disagree.
+- **Measure the source with `medpdf::placed_page_size(doc, page, 1.0, rotation)`, not with
+  `get_page_media_box` extents and not with `get_page_effective_size`.**  Settled with the
+  medpdf session 2026-09-09.  The footprint is exactly linear in scale — `placed_page_size(d,
+  p, s, r) == s * placed_page_size(d, p, 1.0, r)` for every rotation — so a fit is one
+  division and never an iteration.  Measure _with the placement rotation you intend_: 0° and
+  180° both preserve the footprint, so a `--tile` implementation tested only on those looks
+  correct and falls over on the first 90°, which is exactly the case that matters here
+  (a landscape banner onto portrait sheets).  `get_page_effective_size` agrees only while the
+  placement rotation is 0.
+- **Hoist the page-number → `ObjectId` lookup out of the per-tile loop.**  `doc.get_pages()` is
+  a full page-tree walk, and `--tile` calls per sheet where `--nup` called per source page —
+  the one place in this design where the sheet-multiplying property has a cost.  (From the
+  pdf-orchestrator session, 2026-09-09.)
+- **Keep `overlap` in destination points.**  In `cols = ceil((src_w*scale - overlap) /
+  (sheet_w - 2*margin - overlap))` the source term is now
+  `placed_page_size(.., scale, rotation).0`, which is already destination points, so the units
+  agree.  If `overlap` is ever re-expressed as a fraction of the _source_ page, the `/Rotate`
+  transposition reaches the grid through the back door — a comment at the site is the right
+  guard, not a test.
 - Each output sheet is the source page placed with a translation and clipped to the sheet box
   — the same XObject-placement machinery `--nup` already uses, so `bug-0007`’s orphan-stream
   fault applies here and is _multiplied by the sheet count_: a twelve-sheet banner leaks
