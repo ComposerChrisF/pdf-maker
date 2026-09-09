@@ -675,13 +675,15 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         &mut input_report,
     )?;
 
-    if let Some(ref nup) = args.nup {
+    let imposition_geometry = if let Some(ref nup) = args.nup {
         eprintln!("\n--- Applying N-Up Imposition ---");
-        imposition::apply_nup(&mut doc, &mut page_ids, nup)?;
+        Some(imposition::apply_nup(&mut doc, &mut page_ids, nup)?)
     } else if let Some(ref booklet) = args.booklet {
         eprintln!("\n--- Applying Booklet Imposition ---");
-        imposition::apply_booklet(&mut doc, &mut page_ids, booklet)?;
-    }
+        Some(imposition::apply_booklet(&mut doc, &mut page_ids, booklet)?)
+    } else {
+        None
+    };
 
     apply_overlays(&mut doc, &page_ids, &args.overlay)?;
     let font_object_cache = apply_drawing_commands(
@@ -743,6 +745,19 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
     } else {
         "none"
     };
+    // Derived geometry the caller never stated, so it is reported rather than left
+    // to be inferred from the output (bug-0006). `overhang` is non-zero only for a
+    // negative margin — a deliberate bleed — and naming it is what makes that
+    // permitted layout safe to permit: a typo'd margin is legal too, and this is
+    // the only place the difference is visible before it reaches paper.
+    let imposition_geometry = imposition_geometry.map(|g| {
+        let margin = args.nup.as_ref().map(|n| n.margin as f64).unwrap_or(0.0);
+        json!({
+            "cell_width_pt": (g.cell_w * 10.0).round() / 10.0,
+            "cell_height_pt": (g.cell_h * 10.0).round() / 10.0,
+            "bleed_overhang_pt": (imposition::CellGeometry::overhang(margin) * 10.0).round() / 10.0,
+        })
+    });
 
     Ok(json!({
         "tool": "pdf-maker",
@@ -754,6 +769,7 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         "bytes": bytes,
         "encrypted": encrypted,
         "imposition": imposition,
+        "imposition_geometry": imposition_geometry,
         "inputs": input_report,
         "operations": {
             "blank_pages": args.blank_page.iter().map(|s| s.count as u64).sum::<u64>(),

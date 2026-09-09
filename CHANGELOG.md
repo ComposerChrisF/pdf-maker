@@ -5,6 +5,42 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.18.0] — 2026-09-09
+### Fixed
+- **Oversized margins and gutters no longer produce mirrored, shrunken pages at
+  exit 0** (bug-0006).  A margin or gutter large enough to consume the sheet gave
+  a negative cell, hence a negative scale, which `place_page` accepted — silent
+  garbage in a plausible-looking file.  Imposition geometry is now computed by
+  one checked constructor that refuses a non-positive cell, exit 1, naming the
+  paper, margin, gutter, grid and the resulting cell dimension.  `--booklet`
+  gained the matching guard for `binding_margin` against the paper width.
+- **Out-of-range numeric spec values are rejected at parse time** (bug-0009)
+  rather than silently clamped or silently degenerate.  `alpha` outside
+  `[0, 1]` was the worst case: medpdf clamps it, so `alpha=5` lost the
+  transparency entirely and `alpha=-0.5` produced a **fully invisible** mark at
+  exit 0.  Now `alpha` must be a fraction, and `w`, `h`, `size`, `width`,
+  `paper_w` and `paper_h` must be greater than zero, across every spec type.
+
+### Added
+- **Imposition reports its derived geometry**, on stderr and in `--json` as a new
+  `imposition_geometry` object (`cell_width_pt`, `cell_height_pt`,
+  `bleed_overhang_pt`).  This is the obligation attached to permitting negative
+  offsets: a negative `margin` is a deliberate full bleed and stays legal, so a
+  _typo’d_ negative margin is legal too — and the computed geometry is the only
+  thing that distinguishes them before the job reaches paper.
+
+### Changed
+- **`--draw-image max_dpi` takes `none` instead of `0`** for “no downsampling”,
+  and a numeric value below 1.0 is now an error.  `max_dpi=0` was accepted with
+  undefined downstream meaning; the sentinel now stays internal instead of
+  appearing on the CLI surface.
+- **Negative `margin`, `gutter` and `binding_margin` remain legal, deliberately.**
+  Ruled 2026-09-09: an extent may not be negative, an offset may.  A negative
+  margin is a full bleed — a real layout, verified working — and it cannot cause
+  bug-0006’s fault, because it makes the cell _larger_.  A test pins this so a
+  future pass applying the extent rule uniformly fails rather than quietly
+  removing the capability.
+
 ## [0.17.0] — 2026-09-09
 ### Fixed
 - **`--help` no longer advertises `--booklet` keys that do not exist, and now

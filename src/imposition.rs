@@ -23,11 +23,88 @@ struct BorderRect {
     h: f64,
 }
 
+/// One imposition cell's usable dimensions, already proven positive.
+///
+/// Construction is the validation: [`CellGeometry::compute`] is the only way to make
+/// one, and it refuses any parameter combination that leaves no room. Downstream code
+/// can therefore divide by these without re-checking.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CellGeometry {
+    pub cell_w: f64,
+    pub cell_h: f64,
+}
+
+impl CellGeometry {
+    /// Computes the per-cell box for a grid on a sheet, or fails naming the arithmetic.
+    ///
+    /// The check is on the DERIVED quantity, not on the sign of any input, and that is
+    /// deliberate (bug-0006 plus the 2026-09-09 negative-offset ruling in bug-0009).
+    /// A negative `margin` is a legitimate full-bleed layout — it makes the cell
+    /// LARGER — so rejecting negative margins at parse time would foreclose a real
+    /// use while still missing the actual fault. The fault is a non-positive cell,
+    /// and only a large POSITIVE margin or gutter produces one.
+    ///
+    /// A non-positive cell is never a layout anyone wanted: every downstream number
+    /// becomes meaningless, and the negative scale it produces is what turns a bad
+    /// parameter into a plausible-looking corrupt PDF at exit 0.
+    pub(crate) fn compute(
+        paper_w: f64,
+        paper_h: f64,
+        cols: u32,
+        rows: u32,
+        margin: f64,
+        gutter: f64,
+    ) -> Result<Self, MedpdfError> {
+        let avail_w = paper_w - 2.0 * margin - (cols as f64 - 1.0) * gutter;
+        let avail_h = paper_h - 2.0 * margin - (rows as f64 - 1.0) * gutter;
+        let cell_w = avail_w / cols as f64;
+        let cell_h = avail_h / rows as f64;
+
+        for (label, cell, paper) in [("width", cell_w, paper_w), ("height", cell_h, paper_h)] {
+            if cell <= 0.0 {
+                return Err(MedpdfError::new(format!(
+                    "--nup: margin={margin}pt and gutter={gutter}pt leave no room on \
+                     {paper_w}x{paper_h}pt paper for a {cols}x{rows} grid \
+                     (cell {label} {cell:.1}pt, from {paper}pt). \
+                     Reduce the margin or gutter, use larger paper, or use a smaller grid."
+                )));
+            }
+        }
+
+        Ok(Self { cell_w, cell_h })
+    }
+
+    /// How far content spills beyond each sheet edge, in points.
+    ///
+    /// Zero for every ordinary layout. Non-zero means a negative `margin` was used —
+    /// a deliberate full bleed — and saying so is the obligation the 2026-09-09
+    /// negative-offset ruling attaches to permitting negative offsets at all: the
+    /// layout is legal, so the consequence must be visible rather than discovered
+    /// on paper.
+    ///
+    /// It is exactly `-margin`, which is worth deriving rather than eyeballing.
+    /// The first cell starts at `x = margin`, so it extends `|margin|` left of zero.
+    /// The last cell's right edge is
+    /// `margin + cols*cell_w + (cols-1)*gutter = margin + avail_w + (cols-1)*gutter`,
+    /// and since `avail_w = paper_w - 2*margin - (cols-1)*gutter` that collapses to
+    /// `paper_w - margin` — i.e. `|margin|` past the right edge. The gutter cancels,
+    /// so it cannot contribute, and the same holds vertically.
+    pub(crate) fn overhang(margin: f64) -> f64 {
+        (-margin).max(0.0)
+    }
+}
+
+/// Returns the computed [`CellGeometry`] so the caller can report it.
+///
+/// Reporting the derived geometry is not decoration: it is the obligation attached
+/// to permitting negative offsets (bug-0006 / bug-0009). A bleed is a legal layout,
+/// so a typo'd `margin=-0.5` is also legal — and the only thing separating the two
+/// is whether the caller can see what the tool computed.
 pub fn apply_nup(
     doc: &mut Document,
     page_ids: &mut Vec<ObjectId>,
     spec: &NupSpec,
-) -> Result<(), MedpdfError> {
+) -> Result<CellGeometry, MedpdfError> {
     let num_pages = page_ids.len() as u32;
     let cells_per_sheet = spec.cols * spec.rows;
 
@@ -36,11 +113,20 @@ pub fn apply_nup(
     let margin = spec.margin as f64;
     let gutter = spec.gutter as f64;
 
-    // Compute cell dimensions
-    let avail_w = paper_w - 2.0 * margin - (spec.cols as f64 - 1.0) * gutter;
-    let avail_h = paper_h - 2.0 * margin - (spec.rows as f64 - 1.0) * gutter;
-    let cell_w = avail_w / spec.cols as f64;
-    let cell_h = avail_h / spec.rows as f64;
+    let geom = CellGeometry::compute(paper_w, paper_h, spec.cols, spec.rows, margin, gutter)?;
+    let (cell_w, cell_h) = (geom.cell_w, geom.cell_h);
+
+    eprintln!(
+        "Grid {}x{} on {:.0}x{:.0}pt paper; cell {:.1}x{:.1}pt",
+        spec.cols, spec.rows, paper_w, paper_h, cell_w, cell_h
+    );
+    let overhang = CellGeometry::overhang(margin);
+    if overhang > 0.0 {
+        eprintln!(
+            "Note: margin={margin:.1}pt is negative, so content bleeds up to {overhang:.1}pt \
+             beyond each sheet edge and is trimmed by the page box."
+        );
+    }
 
     // Collect source MediaBoxes before we reinitialize the document
     let media_boxes: Vec<[f64; 4]> = page_ids
@@ -169,20 +255,36 @@ pub fn apply_nup(
         )?;
     }
 
-    Ok(())
+    Ok(geom)
 }
 
+/// Returns the per-page slot geometry, for the same reason as [`apply_nup`].
 pub fn apply_booklet(
     doc: &mut Document,
     page_ids: &mut Vec<ObjectId>,
     spec: &BookletSpec,
-) -> Result<(), MedpdfError> {
+) -> Result<CellGeometry, MedpdfError> {
     let num_pages = page_ids.len() as u32;
 
     let paper_w = spec.paper_width as f64;
     let paper_h = spec.paper_height as f64;
     let binding_margin = spec.binding_margin as f64;
     let half_w = (paper_w - binding_margin) / 2.0;
+    if half_w <= 0.0 {
+        return Err(MedpdfError::new(format!(
+            "--booklet: binding_margin={binding_margin}pt leaves no room on {paper_w}pt-wide \
+             paper (each half would be {half_w:.1}pt). Reduce binding_margin or use wider paper."
+        )));
+    }
+    if paper_h <= 0.0 {
+        return Err(MedpdfError::new(format!(
+            "--booklet: paper height {paper_h}pt is not positive"
+        )));
+    }
+    eprintln!(
+        "Booklet halves {:.1}x{:.1}pt on {:.0}x{:.0}pt sheets",
+        half_w, paper_h, paper_w, paper_h
+    );
 
     // Collect source MediaBoxes
     let media_boxes: Vec<[f64; 4]> = page_ids
@@ -291,7 +393,10 @@ pub fn apply_booklet(
     }
 
     impose_pages(doc, page_ids, &sheets, spec.paper_width, spec.paper_height)?;
-    Ok(())
+    Ok(CellGeometry {
+        cell_w: half_w,
+        cell_h: paper_h,
+    })
 }
 
 /// Serializes the current document to memory and reloads it as the source,

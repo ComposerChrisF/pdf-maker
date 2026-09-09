@@ -8,5 +8,13 @@ pub mod layout;
 pub mod misc;
 
 pub use drawing::{DrawImageSpec, DrawLineSpec, DrawRectSpec, WatermarkSpec};
-pub use layout::{BOOKLET_KEYS, BookletSpec, DuplexFlip, GridOrder, NUP_KEYS, NupSpec};
+pub use layout::{BookletSpec, DuplexFlip, GridOrder, NupSpec};
+
+// The spec-key lists are re-exported for the `--help` drift guards in
+// `main.rs::help_tests`, which assert the help text against the parser's own key
+// constants rather than a copy of them (bug-0005). Nothing outside the tests
+// needs them — `layout.rs` uses the constants directly — so gate the re-export
+// and keep non-test builds warning-free.
+#[cfg(test)]
+pub use layout::{BOOKLET_KEYS, NUP_KEYS};
 pub use misc::{BlankPageSpec, OverlaySpec, PadFileSpec, PadToSpec};

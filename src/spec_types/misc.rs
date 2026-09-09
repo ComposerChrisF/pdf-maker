@@ -89,8 +89,8 @@ impl FromStr for BlankPageSpec {
 
         let kv = KvParser::parse(trimmed, "blank-page", &["w", "h", "units", "count"])?;
         let unit: Unit = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::Pt);
-        let w_raw = kv.required_parse::<f32>("w")?;
-        let h_raw = kv.required_parse::<f32>("h")?;
+        let w_raw = kv.required_positive("w")?;
+        let h_raw = kv.required_positive("h")?;
         let count = kv.optional_parse::<u32>("count")?.unwrap_or(1);
         if count == 0 {
             return Err("blank-page 'count' must be greater than 0".to_string());

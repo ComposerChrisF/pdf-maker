@@ -49,9 +49,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Thirteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
-bug-0007, bug-0008 and bug-0016 (all fixed 2026-09-09 and deleted per the bug-reports
-lifecycle).  (bug-0016 was filed
+**Eleven** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
+bug-0006, bug-0007, bug-0008, bug-0009 and bug-0016 (all fixed 2026-09-09 and deleted per the
+bug-reports lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -72,17 +72,16 @@ with them.  All are on the imposition path; none is waiting on a ruling.
   the test name it.  Scope was extended one line beyond the report: an unknown key now lists
   the valid ones, for every spec type, since that is the same fault class and the error is
   where a caller working from stale docs actually looks.
-- [ ] **bug-0006** — oversized margins/gutters give non-positive imposition cells: mirrored,
-  shrunken pages at exit 0.  **The hard prerequisite.**  Its fix is to extract the cell
-  geometry into one checked computation, which is exactly the code `--tile` reuses; doing it
-  after `--tile` means writing the check twice.  Now also carries the reporting obligation from
-  the negative-offset ruling: emit the computed cell size and any off-sheet overhang in
-  `--json` and on stderr.
-- [ ] **bug-0009** — parse-level range validation (alpha in `[0, 1]`, positive extents).  Pair
-  with bug-0006 — same validation theme, adjacent code — and land it before `TileSpec` exists,
-  so the new spec type is written to the settled pattern rather than retrofitted.  Hold back
-  only the `max_dpi` item, which still needs its Phase A ruling.  **The negative-margin item is
-  ruled and closed**: no sign check on offsets.
+- [x] **bug-0006 — DONE 2026-09-09.**  Geometry now goes through `CellGeometry::compute`, the
+  only constructor, so construction _is_ the validation and downstream code can divide without
+  re-checking — this is the type `--tile` reuses.  Non-positive cell is exit 1 naming the whole
+  arithmetic; `--booklet` got the matching `binding_margin` guard.  The reporting obligation is
+  discharged on both surfaces: stderr progress and a new `--json` `imposition_geometry` object.
+- [x] **bug-0009 — DONE 2026-09-09**, all four items including `max_dpi`.  `KvParser` gained
+  `optional_positive` / `required_positive` / `optional_alpha`, so `TileSpec` is written to the
+  settled pattern rather than retrofitted.  The negative-offset ruling is pinned by
+  `offsets_may_be_negative`, which fails if someone later applies the extent rule uniformly —
+  verified by doing exactly that and watching it fail.
 - [x] **medpdf bug-0023, bug-0024 and bug-0039 — DONE.**  Shipped in medpdf 0.13.0
   (`6208ff4`).  `place_page` now anchors the placed bounding box at `(x, y)` for any MediaBox
   origin and any rotation, and honors the source `/Rotate`; the orphaned-stream leak is gone.

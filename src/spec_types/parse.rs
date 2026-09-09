@@ -349,6 +349,57 @@ impl KvParser {
     }
 
     /// Apply a custom parser to an optional field (e.g. parse_color, parse_font_weight).
+    /// Parses an f32 that must be strictly positive — an **extent**.
+    ///
+    /// The 2026-09-09 ruling (bug-0009): *an extent may not be negative; an offset
+    /// may.* Widths, heights, font sizes, line widths and paper dimensions are
+    /// extents and have no meaning at or below zero, so they are rejected here, at
+    /// the one layer that sees the caller's literal input. Offsets — `margin`,
+    /// `gutter`, `binding_margin`, `x`, `y` — deliberately do NOT use this: a
+    /// negative offset is a bleed, which is a real layout, and the fault it could
+    /// otherwise cause is caught on the derived quantity instead (bug-0006).
+    pub(super) fn optional_positive(&self, key: &str) -> Result<Option<f32>, String> {
+        match self.optional_parse::<f32>(key)? {
+            None => Ok(None),
+            Some(v) if v > 0.0 && v.is_finite() => Ok(Some(v)),
+            Some(v) => Err(format!(
+                "Invalid {key} value: {v}. {} '{key}' must be greater than 0.",
+                self.type_label
+            )),
+        }
+    }
+
+    /// Required counterpart of [`optional_positive`](Self::optional_positive).
+    pub(super) fn required_positive(&self, key: &str) -> Result<f32, String> {
+        let v = self.required_parse::<f32>(key)?;
+        if v > 0.0 && v.is_finite() {
+            Ok(v)
+        } else {
+            Err(format!(
+                "Invalid {key} value: {v}. {} '{key}' must be greater than 0.",
+                self.type_label
+            ))
+        }
+    }
+
+    /// Parses an alpha in `[0.0, 1.0]`.
+    ///
+    /// Out-of-range alpha was the worst item in bug-0009 because medpdf *clamps* it
+    /// silently: `alpha=5` clamped to 1.0 and emitted no ExtGState at all, and
+    /// `alpha=-0.5` clamped to 0.0, producing a **fully invisible** watermark at
+    /// exit 0. A caller who typed `alpha=50` meaning "50%" got silent wrong output.
+    /// An explicit `alpha=0` stays legal — that is stated intent, not a typo.
+    pub(super) fn optional_alpha(&self, key: &str) -> Result<Option<f32>, String> {
+        match self.optional_parse::<f32>(key)? {
+            None => Ok(None),
+            Some(v) if (0.0..=1.0).contains(&v) => Ok(Some(v)),
+            Some(v) => Err(format!(
+                "Invalid {key} value: {v}. Alpha must be between 0.0 and 1.0 \
+                 (0 = fully transparent, 1 = fully opaque). For a percentage, divide by 100."
+            )),
+        }
+    }
+
     pub(super) fn optional_with<T, F>(&self, key: &str, parser: F) -> Result<Option<T>, String>
     where
         F: FnOnce(&str) -> Result<T, String>,

@@ -180,8 +180,8 @@ impl FromStr for NupSpec {
         let cols_in = kv.optional_parse::<u32>("cols")?;
         let rows_in = kv.optional_parse::<u32>("rows")?;
         let paper = kv.get("paper").map(str::to_string);
-        let paper_w = kv.optional_parse::<f32>("paper_w")?;
-        let paper_h = kv.optional_parse::<f32>("paper_h")?;
+        let paper_w = kv.optional_positive("paper_w")?;
+        let paper_h = kv.optional_positive("paper_h")?;
         let orientation = kv.optional_with("orientation", parse_orientation)?;
         let margin = kv.optional_parse::<f32>("margin")?;
         let gutter = kv.optional_parse::<f32>("gutter")?;
@@ -302,8 +302,8 @@ impl FromStr for BookletSpec {
         let kv = KvParser::parse(s, "booklet", BOOKLET_KEYS)?;
 
         let paper = kv.get("paper").map(str::to_string);
-        let paper_w = kv.optional_parse::<f32>("paper_w")?;
-        let paper_h = kv.optional_parse::<f32>("paper_h")?;
+        let paper_w = kv.optional_positive("paper_w")?;
+        let paper_h = kv.optional_positive("paper_h")?;
         let binding_margin = kv.optional_parse::<f32>("binding_margin")?;
         let unit: Unit = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::In);
         let flip = kv.optional_with("flip", parse_duplex_flip)?;
@@ -610,5 +610,99 @@ mod tests {
     #[test]
     fn test_booklet_spec_paper_w_without_paper_h() {
         assert!(BookletSpec::from_str("paper_w=100").is_err());
+    }
+}
+
+#[cfg(test)]
+mod range_validation_tests {
+    use super::*;
+    use crate::imposition::CellGeometry;
+    use crate::spec_types::{BlankPageSpec, DrawLineSpec, DrawRectSpec, WatermarkSpec};
+
+    /// Extents are rejected at or below zero (bug-0009).
+    #[test]
+    fn extents_must_be_positive() {
+        assert!(BlankPageSpec::from_str("w=0,h=792").is_err());
+        assert!(BlankPageSpec::from_str("w=612,h=-1").is_err());
+        assert!(NupSpec::from_str("n=4,paper_w=0,paper_h=792").is_err());
+        assert!(BookletSpec::from_str("paper_w=-612,paper_h=792").is_err());
+        assert!(DrawRectSpec::from_str("x=0,y=0,w=0,h=10").is_err());
+        assert!(DrawLineSpec::from_str("x1=0,y1=0,x2=1,y2=1,width=0").is_err());
+        assert!(WatermarkSpec::from_str("text=X,font=@Helvetica,x=0,y=0,size=0").is_err());
+    }
+
+    /// Alpha outside [0,1] is rejected rather than silently clamped.
+    ///
+    /// The clamp was the fault: `alpha=5` clamped to 1.0 and emitted no ExtGState,
+    /// and `alpha=-0.5` clamped to 0.0 — a fully INVISIBLE mark at exit 0.
+    #[test]
+    fn alpha_must_be_a_fraction() {
+        for bad in ["5", "-0.5", "50", "1.0001"] {
+            assert!(
+                DrawRectSpec::from_str(&format!("x=0,y=0,w=1,h=1,alpha={bad}")).is_err(),
+                "alpha={bad} must be rejected"
+            );
+        }
+        // The endpoints are legal: an explicit alpha=0 is stated intent, not a typo.
+        for ok in ["0", "0.0", "1", "1.0", "0.5"] {
+            assert!(
+                DrawRectSpec::from_str(&format!("x=0,y=0,w=1,h=1,alpha={ok}")).is_ok(),
+                "alpha={ok} must be accepted"
+            );
+        }
+    }
+
+    /// The other half of the ruling, and the one most at risk of being "tidied up"
+    /// by someone applying the extent rule uniformly: **offsets may be negative.**
+    ///
+    /// A negative margin is a full bleed — a real layout that already worked — and
+    /// it can never produce bug-0006's fault, because it makes the cell LARGER.
+    /// If this test starts failing, the fix is to restore the behavior, not to
+    /// update the test.
+    #[test]
+    fn offsets_may_be_negative() {
+        let spec = NupSpec::from_str("n=4,margin=-0.25,units=in").expect("bleed is legal");
+        assert!(spec.margin < 0.0, "negative margin must survive parsing");
+
+        assert!(
+            NupSpec::from_str("n=4,gutter=-10,units=pt").is_ok(),
+            "a negative gutter overlaps cells, which is a layout, not an error"
+        );
+        assert!(
+            BookletSpec::from_str("binding_margin=-0.5,units=in").is_ok(),
+            "a negative binding margin overlaps at the spine"
+        );
+        assert!(
+            DrawRectSpec::from_str("x=-10,y=-10,w=100,h=100").is_ok(),
+            "negative draw coordinates place content off the page edge deliberately"
+        );
+    }
+
+    /// Non-positive derived cells are caught on the DERIVED quantity, which is what
+    /// lets the sign checks above stay off the offsets (bug-0006).
+    #[test]
+    fn degenerate_cells_are_rejected_with_the_arithmetic() {
+        let err = CellGeometry::compute(612.0, 792.0, 2, 2, 360.0, 0.0)
+            .expect_err("360pt margins leave no room on letter");
+        let msg = err.to_string();
+        for expected in ["360", "612", "792", "2x2"] {
+            assert!(
+                msg.contains(expected),
+                "error should name {expected}: {msg}"
+            );
+        }
+
+        // A large gutter fails the same way, without enumerating it at parse time.
+        assert!(CellGeometry::compute(612.0, 792.0, 4, 1, 0.0, 300.0).is_err());
+
+        // And the bleed case stays legal, with a LARGER cell than the plain split.
+        let bleed = CellGeometry::compute(612.0, 792.0, 2, 2, -18.0, 0.0).expect("bleed is legal");
+        let plain = CellGeometry::compute(612.0, 792.0, 2, 2, 0.0, 0.0).unwrap();
+        assert!(bleed.cell_w > plain.cell_w);
+        assert!((CellGeometry::overhang(-18.0) - 18.0).abs() < 1e-9);
+        assert!(
+            (CellGeometry::overhang(18.0)).abs() < 1e-9,
+            "no overhang when inset"
+        );
     }
 }

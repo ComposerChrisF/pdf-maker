@@ -1115,3 +1115,60 @@ fn cli_booklet_duplex_flip_is_orientation_aware() {
     // `flip=none` never compensates, whatever the paper.
     assert!(!booklet_backs_rotated("paper=letter", "none"));
 }
+
+/// The derived imposition geometry must reach `--json`, not just stderr.
+///
+/// This is the obligation attached to permitting negative offsets (bug-0006): a
+/// bleed is a legal layout, so a typo'd `margin=-0.5` is legal too, and the only
+/// thing separating them is whether the caller can see what was computed. An
+/// orchestrator reads `--json`, not the progress block.
+#[test]
+fn cli_json_reports_imposition_geometry() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let out = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--nup",
+            "n=4,margin=-0.25,units=in",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let json = String::from_utf8(out.stdout).unwrap();
+
+    for field in ["cell_width_pt", "cell_height_pt", "bleed_overhang_pt"] {
+        assert!(json.contains(field), "--json must report {field}: {json}");
+    }
+    // -0.25in = -18pt, so content bleeds 18pt past each edge.
+    assert!(
+        json.contains("18.0"),
+        "bleed overhang should be reported as 18.0pt: {json}"
+    );
+
+    // An ordinary inset layout reports no overhang at all.
+    let plain = tempfile::NamedTempFile::new().unwrap();
+    let out2 = pdf_maker_bin()
+        .args([
+            "-o",
+            plain.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--nup",
+            "n=4,margin=0.25,units=in",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(out2.status.success());
+    let json2 = String::from_utf8(out2.stdout).unwrap();
+    assert!(
+        json2.contains("\"bleed_overhang_pt\": 0.0"),
+        "an inset layout must report zero overhang: {json2}"
+    );
+}

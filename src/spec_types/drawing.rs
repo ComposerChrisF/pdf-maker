@@ -86,14 +86,14 @@ impl FromStr for WatermarkSpec {
         let x = kv.required_parse::<f32>("x")?;
         let y = kv.required_parse::<f32>("y")?;
 
-        let size = kv.optional_parse::<f32>("size")?.unwrap_or(48.0);
+        let size = kv.optional_positive("size")?.unwrap_or(48.0);
         let units = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::In);
         let pages = kv
             .get("pages")
             .map(str::to_string)
             .unwrap_or_else(|| "all".to_string());
         let color_opt = kv.optional_with("color", parse_color)?;
-        let alpha = kv.optional_parse::<f32>("alpha")?;
+        let alpha = kv.optional_alpha("alpha")?;
         let rotation = kv.optional_parse::<f32>("rotation")?.unwrap_or(0.0);
         let h_align = kv
             .optional_with("h_align", parse_h_align)?
@@ -172,10 +172,10 @@ impl FromStr for DrawRectSpec {
 
         let x = kv.required_parse::<f32>("x")?;
         let y = kv.required_parse::<f32>("y")?;
-        let w = kv.required_parse::<f32>("w")?;
-        let h = kv.required_parse::<f32>("h")?;
+        let w = kv.required_positive("w")?;
+        let h = kv.required_positive("h")?;
         let color_opt = kv.optional_with("color", parse_color)?;
-        let alpha = kv.optional_parse::<f32>("alpha")?;
+        let alpha = kv.optional_alpha("alpha")?;
         let pages = kv
             .get("pages")
             .map(str::to_string)
@@ -227,9 +227,9 @@ impl FromStr for DrawLineSpec {
         let y1 = kv.required_parse::<f32>("y1")?;
         let x2 = kv.required_parse::<f32>("x2")?;
         let y2 = kv.required_parse::<f32>("y2")?;
-        let width = kv.optional_parse::<f32>("width")?.unwrap_or(1.0);
+        let width = kv.optional_positive("width")?.unwrap_or(1.0);
         let color_opt = kv.optional_with("color", parse_color)?;
-        let alpha = kv.optional_parse::<f32>("alpha")?;
+        let alpha = kv.optional_alpha("alpha")?;
         let pages = kv
             .get("pages")
             .map(str::to_string)
@@ -296,21 +296,43 @@ impl FromStr for DrawImageSpec {
         let file = PathBuf::from(kv.required_str("file")?);
         let x = kv.required_parse::<f32>("x")?;
         let y = kv.required_parse::<f32>("y")?;
-        let w = kv.optional_parse::<f32>("w")?;
-        let h = kv.optional_parse::<f32>("h")?;
+        let w = kv.optional_positive("w")?;
+        let h = kv.optional_positive("h")?;
         if w.is_none() && h.is_none() {
             return Err("draw-image requires at least one of 'w' or 'h'".to_string());
         }
         let fit = kv
             .optional_with("fit", parse_image_fit)?
             .unwrap_or(ImageFit::Contain);
-        let max_dpi = kv.optional_parse::<f32>("max_dpi")?.unwrap_or(300.0);
+        // `max_dpi=none` is the public spelling for "no downsampling" (ruled
+        // 2026-09-09, bug-0009 item 4). It maps to 0.0 internally, which is what
+        // medpdf-image already treats as "no limit" — but the sentinel never
+        // appears on the CLI surface, so a caller need not memorise that 0 is
+        // magic. A numeric value below 1.0, including 0, is now an error: it used
+        // to be silently accepted, with undefined downstream meaning.
+        let max_dpi = kv
+            .optional_with("max_dpi", |v| {
+                if v.eq_ignore_ascii_case("none") {
+                    return Ok(0.0f32);
+                }
+                let n = v.parse::<f32>().map_err(|_| {
+                    format!("Invalid max_dpi value: '{v}'. Use a number of at least 1, or 'none'.")
+                })?;
+                if n < 1.0 || !n.is_finite() {
+                    return Err(format!(
+                        "Invalid max_dpi value: {n}. Use a number of at least 1, \
+                         or 'none' to disable downsampling entirely."
+                    ));
+                }
+                Ok(n)
+            })?
+            .unwrap_or(300.0);
         let pages = kv
             .get("pages")
             .map(str::to_string)
             .unwrap_or_else(|| "all".to_string());
         let layer_over = kv.optional_layer()?.unwrap_or(true);
-        let alpha = kv.optional_parse::<f32>("alpha")?.unwrap_or(1.0);
+        let alpha = kv.optional_alpha("alpha")?.unwrap_or(1.0);
         let rotation = kv.optional_parse::<f32>("rotation")?.unwrap_or(0.0);
 
         Ok(DrawImageSpec {
@@ -893,8 +915,22 @@ mod tests {
 
     #[test]
     fn test_draw_image_spec_max_dpi_zero() {
-        let spec = DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,max_dpi=0").unwrap();
-        assert!((spec.max_dpi - 0.0).abs() < f32::EPSILON);
+        // Rewritten, not deleted, 2026-09-09. This test used to assert that
+        // `max_dpi=0` was ACCEPTED, which made the old behavior look deliberate.
+        // The ruling replaced the magic zero with `none` on the public surface and
+        // made sub-1.0 numerics an error, so the test now pins both halves of that
+        // decision. Silently flipping it would have erased the record that the old
+        // acceptance was intentional.
+        let err = DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,max_dpi=0")
+            .expect_err("max_dpi=0 is no longer accepted");
+        assert!(err.contains("max_dpi"), "error should name the key: {err}");
+        assert!(err.contains("none"), "error should offer 'none': {err}");
+
+        let spec = DrawImageSpec::from_str("file=logo.png,x=0,y=0,w=100,max_dpi=none").unwrap();
+        assert!(
+            (spec.max_dpi - 0.0).abs() < f32::EPSILON,
+            "'none' maps to the 0.0 sentinel internally"
+        );
     }
 
     #[test]
