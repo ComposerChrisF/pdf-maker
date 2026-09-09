@@ -42,3 +42,29 @@ A documentation-only pass over README.md and CLAUDE.md covering items 1–8, 11,
 ## Why this fix addresses the bug
 
 The defect is that the spec no longer describes the tool; the fix is to make it describe the tool, in the order that avoids documenting behavior about to change.
+
+## Additional item (added 2026-09-09): state the `--dry-run` contract precisely
+
+`CLAUDE.md` currently says `--dry-run` “writes no file, and still performs the full validation
+pass”.  That is very nearly true and slightly overstated, and the doc pass should not copy the
+overstatement into the README.
+
+Verified 2026-09-09: the flag branches at exactly one place, the **save**
+(`src/main.rs:645`).  Merge, imposition, overlays, drawing commands and padding all run against
+the real document, and the encryption parameters — including `parse_permissions` — are resolved
+at `:627`, _before_ the branch.  So everything the phrase implies about the pipeline holds.
+
+What a dry run does **not** exercise is `save_document` itself: compression, the actual
+application of encryption, and the file write.  A failure that lives in there — the class the
+`lopdf_save_modern_bug.rs` sentinel guards — is invisible to `--dry-run`, which will report
+success for a document that cannot be written.
+
+So the accurate phrasing is “runs the full **pipeline** and skips only the save”, not “full
+validation pass”.  Say which, in both `--help` and the README, and say what that leaves
+unchecked.
+
+This distinction had practical value beyond wording: the single-branch structure is what makes
+a dry run and a real run agree about geometry by construction, which is not true of every
+tool — the pdf-orchestrator session runs a separate simulation against a substituted page size
+and has five open parity bugs as a consequence.  Worth one sentence in the README saying the
+property is deliberate, so nobody later “optimizes” `--dry-run` into a second code path.
