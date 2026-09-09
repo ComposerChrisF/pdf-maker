@@ -1283,3 +1283,138 @@ fn cli_pad_pages_match_a_rotated_last_page() {
         "pad page {pad_w}x{pad_h} should be landscape to match the rotated last page"
     );
 }
+
+/// Run pdf-maker and return (exit code, stderr).
+fn run_expecting_failure(args: &[&str]) -> (i32, String) {
+    let out = pdf_maker_bin().args(args).output().unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Asking to restrict a document without supplying a password must FAIL, not
+/// silently produce an unrestricted file.
+///
+/// bug-0004, severity High: `--permissions` and `--encryption-algorithm` were
+/// consumed inside the arm that only runs when a password is present, so without one
+/// they were read and discarded. `--permissions none` wrote an **unencrypted** PDF
+/// with **every** permission available, at exit 0 — the exact opposite of the stated
+/// intent, with no signal. A security intent must never be silently downgraded.
+#[test]
+fn cli_restriction_without_a_password_is_refused() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let i = input.path().to_str().unwrap().to_string();
+    let o = output.path().to_str().unwrap().to_string();
+
+    for flag in [
+        vec!["--permissions", "none"],
+        vec!["--permissions", "print"],
+        vec!["--encryption-algorithm", "aes256"],
+    ] {
+        let mut args = vec!["-o", &o, &i, "all"];
+        args.extend(flag.iter());
+        let (code, stderr) = run_expecting_failure(&args);
+        assert_eq!(code, 2, "{flag:?} without a password must be a usage error");
+        assert!(
+            stderr.contains("password"),
+            "the error must name the missing password: {stderr}"
+        );
+    }
+}
+
+/// The gate must not block the legitimate combination, or it would trade a silent
+/// wrong output for a loud wrong refusal.
+#[test]
+fn cli_restriction_with_a_password_still_works() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--owner-password",
+            "secret",
+            "--permissions",
+            "print",
+            "--encryption-algorithm",
+            "aes256",
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the documented combination must still work"
+    );
+
+    // And the file really is encrypted — the point of the whole exercise.
+    let bytes = std::fs::read(output.path()).unwrap();
+    let haystack = String::from_utf8_lossy(&bytes);
+    assert!(
+        haystack.contains("/Encrypt"),
+        "output should declare /Encrypt"
+    );
+
+    // The default algorithm still applies when unspecified (it moved from a clap
+    // default_value to an in-code unwrap_or, because an eager default would have
+    // made the `requires` gate fire on every run).
+    let plain = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            plain.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--user-password",
+            "openme",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "a password alone must still encrypt");
+    let bytes = std::fs::read(plain.path()).unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains("/Encrypt"));
+}
+
+/// Statically-invalid invocations exit 2, not 1 (bug-0014).
+///
+/// The distinction is machine-actionable: exit 1 means "the tool failed, retry or
+/// debug it"; exit 2 means "fix the command line". An orchestrator branches on it.
+#[test]
+fn cli_static_usage_errors_exit_2() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let i = input.path().to_str().unwrap().to_string();
+    let o = output.path().to_str().unwrap().to_string();
+
+    // An odd number of positionals. Previously exit 1, while a SINGLE positional
+    // exited 2 via clap's own num_args floor — the same mistake, two codes.
+    let (code, stderr) = run_expecting_failure(&["-o", &o, &i, "all", &i]);
+    assert_eq!(code, 2, "odd positional count is a usage error: {stderr}");
+    assert!(stderr.contains("pairs"), "{stderr}");
+
+    // An invalid permission name, with a password present. Previously exit 1 from
+    // deep inside run(); now rejected by the value_parser at parse time.
+    let (code, stderr) = run_expecting_failure(&[
+        "-o",
+        &o,
+        &i,
+        "all",
+        "--user-password",
+        "pw",
+        "--permissions",
+        "bogus",
+    ]);
+    assert_eq!(code, 2, "bad permission name is a usage error: {stderr}");
+    assert!(stderr.contains("bogus"), "{stderr}");
+
+    // The other side of the contract, so the distinction is pinned from both ends:
+    // a WORLD mismatch stays exit 1.
+    let (code, _) = run_expecting_failure(&["-o", &o, &i, "1,99"]);
+    assert_eq!(code, 1, "an out-of-range page is a tool error, not usage");
+}

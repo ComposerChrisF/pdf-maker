@@ -5,6 +5,37 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.20.0] — 2026-09-09
+### Fixed
+- **Security: asking to restrict a document without a password is now refused
+  instead of silently ignored** (bug-0004).  `--permissions` and
+  `--encryption-algorithm` were consumed inside the arm that only runs when a
+  password is present, so without one they were read and discarded:
+  `--permissions none` wrote an **unencrypted** PDF with **every** permission
+  available, at exit 0 — the exact opposite of the stated intent, with no signal.
+  Both flags now declare a clap dependency on `--user-password` /
+  `--owner-password`, so the combination is rejected before any work begins, exit
+  2, naming the missing password.
+- **Permission names are validated at parse time.**  Previously an invalid name
+  was only checked _inside_ the encryption arm, so without a password it was never
+  checked at all, and with one it surfaced as a tool error (exit 1) from deep
+  inside the run.  It is now a clap `value_parser`, so `--permissions bogus` is a
+  usage error (exit 2) listing the valid names.
+- **Statically-invalid invocations exit 2, not 1** (bug-0014).  An odd number of
+  positional arguments is reported through clap, which also removes an
+  inconsistency: a _single_ positional already exited 2 via clap’s own `num_args`
+  floor, so the same mistake produced two different codes depending on arity.
+  The distinction is machine-actionable — 1 means “the tool failed, retry or debug
+  it”, 2 means “fix the command line” — and a test now pins it from both sides, by
+  asserting an out-of-range page still exits 1.
+
+### Changed
+- `--encryption-algorithm` no longer carries a clap `default_value`; the aes128
+  default is applied in code.  clap cannot distinguish “defaulted” from
+  “user-supplied” for a `requires` check, so an eager default would have made the
+  new gate fire on every run.  Behavior is unchanged: a password alone still
+  encrypts with aes128.
+
 ## [0.19.0] — 2026-09-09
 ### Fixed
 - **A source page carrying `/Rotate 90` or `/Rotate 270` is now scaled to the cell

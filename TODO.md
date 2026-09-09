@@ -49,9 +49,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Ten** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
-bug-0006, bug-0007, bug-0008, bug-0009, bug-0016 and bug-0018 (all fixed 2026-09-09 and deleted
-per the bug-reports lifecycle).  (bug-0016 was filed
+**Eight** bug reports live in `bugs/` — bug-0002, bug-0003, bug-0010 through bug-0013,
+bug-0015 and bug-0017.  Ten were fixed on 2026-09-09 and deleted per the bug-reports
+lifecycle.  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -156,10 +156,12 @@ rulings themselves are settled and no longer block anything.
 
 Each fix lands with a test that fails when the fix is reverted.
 
-- [ ] **bug-0004** — `--permissions` / `--encryption-algorithm` silently ignored without a
-  password (writes an unencrypted, unrestricted file at exit 0).  The worst silent-wrong-output
-  fault left in the queue.  Pair with **bug-0014** (usage errors exit 1, not 2) — both touch
-  permissions parsing and clap wiring.
+- [x] **bug-0004 and bug-0014 — DONE 2026-09-09**, ahead of `--tile` because bug-0004 is a
+  **security** fault and Chris’s standing order puts corruption and security bugs ahead of
+  feature work.  Both flags now declare a clap dependency on a password; permission names are
+  validated by a `value_parser`; the odd-positional-count check is reported through clap.  The
+  exit-code contract is pinned from both sides — statically-invalid invocations exit 2, an
+  out-of-range page still exits 1.
 - [ ] **bug-0011** — `--pad-last-page-file` without `--pad-to` silently ignored.  One-line clap
   `requires`.
 - [ ] **bug-0010** — `--overlay src_page=` / `--pad-last-page-file page=` validated late or

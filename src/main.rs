@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{ArgGroup, CommandFactory, Parser, ValueEnum};
 use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -122,6 +122,18 @@ PATHS:
 /// A command-line tool for advanced manipulation of PDF documents.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None, after_long_help = EXIT_STATUS_HELP)]
+// `--permissions` and `--encryption-algorithm` are meaningless without a password:
+// medpdf only builds encryption parameters when one is present, so without this group
+// they were read, then silently discarded, and pdf-maker wrote an UNENCRYPTED,
+// UNRESTRICTED file at exit 0 (bug-0004). A caller asking to restrict a document got
+// the opposite, with no signal. Declaring the dependency to clap turns that into a
+// usage error before any work begins — exit 2, per the portfolio exit-code table.
+#[command(group(
+    ArgGroup::new("encryption_credentials")
+        .args(["user_password", "owner_password"])
+        .multiple(true)
+        .required(false)
+))]
 struct Args {
     #[arg(short, long, help = "Output PDF path")]
     output: PathBuf,
@@ -211,18 +223,36 @@ struct Args {
     user_password: Option<String>,
     #[arg(long, help = "Password required to change permissions/restrictions")]
     owner_password: Option<String>,
+    // No `default_value` here, deliberately: clap cannot distinguish "defaulted" from
+    // "user-supplied" for a `requires` check, so an eager default would make the gate
+    // below fire on every run. The aes128 default is applied in code instead.
     #[arg(
         long,
-        default_value = "aes128",
-        help = "Encryption algorithm: aes256, aes128, rc4"
+        requires = "encryption_credentials",
+        help = "Encryption algorithm: aes256, aes128 (default), rc4. Requires --user-password or --owner-password"
     )]
-    encryption_algorithm: EncryptionAlgo,
+    encryption_algorithm: Option<EncryptionAlgo>,
     #[arg(
         long,
         value_delimiter = ',',
-        help = "Comma-separated permissions: print,modify,copy,annotate,fill,accessibility,assemble,print_hq,all,none"
+        requires = "encryption_credentials",
+        value_parser = validate_permission_name,
+        help = "Comma-separated permissions: print,modify,copy,annotate,fill,accessibility,assemble,print_hq,all,none. \
+                Requires --user-password or --owner-password. Omit to allow everything"
     )]
     permissions: Vec<String>,
+}
+
+/// Validates one `--permissions` name at parse time, so a bad name is a clap usage
+/// error (exit 2) rather than a tool error raised deep inside `run` (bug-0014).
+///
+/// Returns the name unchanged; `medpdf::parse_permissions` still does the actual
+/// bit-combining later. Validating here also closes bug-0004's corollary — without a
+/// password the names were never checked at all, because `parse_permissions` was only
+/// reached inside the encryption arm.
+fn validate_permission_name(name: &str) -> Result<String, String> {
+    medpdf::parse_permission_name(name)?;
+    Ok(name.to_string())
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -624,6 +654,21 @@ fn save_document(
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let args = Args::parse();
+
+    // Reported through clap so it carries clap's exit code 2, not the generic tool
+    // error path's 1 (bug-0014). Nothing about the world is involved: an odd number
+    // of positionals is wrong on its face, so no state could make it valid. A single
+    // positional already exited 2 via clap's own `num_args` floor, so before this the
+    // same mistake got two different codes depending on arity.
+    if !args.inputs.is_empty() && !args.inputs.len().is_multiple_of(2) {
+        Args::command()
+            .error(
+                clap::error::ErrorKind::WrongNumberOfValues,
+                "Input arguments must be in pairs of file paths and page specifications, \
+                 e.g. `in.pdf \"1-3\"`.",
+            )
+            .exit();
+    }
     match run(&args) {
         Ok(summary) => {
             if args.json {
@@ -660,11 +705,6 @@ fn check_paths(args: &Args) -> Result<(), MedpdfError> {
 }
 
 fn run(args: &Args) -> Result<Value, MedpdfError> {
-    if !args.inputs.is_empty() && !args.inputs.len().is_multiple_of(2) {
-        return Err(
-            "Input arguments must be in pairs of file paths and page specifications.".into(),
-        );
-    }
     check_paths(args)?;
 
     let mut doc = init_document();
@@ -713,7 +753,9 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         _ => {
             let user = args.user_password.as_deref().unwrap_or("");
             let owner = args.owner_password.as_deref().unwrap_or(user);
-            let algo = EncryptionAlgorithm::from(args.encryption_algorithm);
+            let algo = EncryptionAlgorithm::from(
+                args.encryption_algorithm.unwrap_or(EncryptionAlgo::Aes128),
+            );
             let perms = medpdf::parse_permissions(&args.permissions).map_err(MedpdfError::new)?;
             Some(
                 EncryptionParams::new(user, owner)
