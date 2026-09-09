@@ -8,5 +8,5 @@ pub mod layout;
 pub mod misc;
 
 pub use drawing::{DrawImageSpec, DrawLineSpec, DrawRectSpec, WatermarkSpec};
-pub use layout::{BookletSpec, DuplexFlip, GridOrder, NupSpec};
+pub use layout::{BOOKLET_KEYS, BookletSpec, DuplexFlip, GridOrder, NUP_KEYS, NupSpec};
 pub use misc::{BlankPageSpec, OverlaySpec, PadFileSpec, PadToSpec};

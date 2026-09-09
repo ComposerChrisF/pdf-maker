@@ -18,6 +18,82 @@ use spec_types::{
     PadFileSpec, PadToSpec, WatermarkSpec,
 };
 
+/// Long help for `--nup`.
+///
+/// Every key in `spec_types::NUP_KEYS` must appear here; `nup_help_documents_every_key`
+/// enforces it against the constant itself, so adding a key without documenting it
+/// fails the build rather than shipping an incomplete `--help`. That test exists
+/// because this text was wrong for three releases (bug-0005): it listed no keys at all.
+const NUP_HELP: &str = "\
+N-up imposition: place multiple input pages on each output sheet.
+
+Spec keys (comma-separated key=value):
+  n           Pages per sheet. One of: 1, 2, 4, 6, 8, 9, 16.
+              n=2 is two pages SIDE BY SIDE on a landscape sheet.
+              For any other grid, use cols= and rows=.
+  cols, rows  Explicit grid, e.g. cols=3,rows=1. Unambiguous; use instead of n
+              when you want a layout n does not name. Mutually exclusive with n.
+  paper       Sheet size: letter, a4, or legal.
+  paper_w,    Custom sheet size, in `units`. Use instead of paper=,
+  paper_h       not alongside it.
+  orientation portrait | landscape | auto (default auto: landscape when cols>rows).
+  margin      Blank margin around the whole sheet. Default 0.
+  gutter      Space between cells. Default 0.
+  units       pt | in | mm | cm. Default in.
+  order       Cell fill order: lrtb | rltb | tblr | tbrl. Default lrtb.
+  border      true | false. Draw a thin rule around each placed page. Default false.
+  repeat      Repeat each source page N times, or 'auto' to fill one sheet
+              per source page. Default 1.
+
+Examples:
+  --nup \"n=2\"                          two-up, side by side, landscape letter
+  --nup \"cols=1,rows=2\"                 two-up stacked on a portrait sheet
+  --nup \"n=4,paper=a4,margin=0.5,border=true\"
+
+Conflicts with --booklet.
+";
+
+/// Long help for `--booklet`.
+///
+/// Same drift guard as `NUP_HELP`, via `booklet_help_documents_every_key`. This text
+/// previously advertised two keys that do not exist — `orientation` and `duplex_flip`
+/// (the real name is `flip`) — so following it verbatim produced an error (bug-0005).
+const BOOKLET_HELP: &str = "\
+Booklet imposition for saddle-stitched printing: reorder pages so that folding the
+printed stack in half yields a booklet. Pass with no value for all defaults.
+
+Spec keys (comma-separated key=value):
+  paper           Sheet size: letter, a4, or legal. Forced to landscape.
+  paper_w,        Custom sheet size, in `units`. Use instead of paper=.
+  paper_h
+  binding_margin  Gutter at the spine, split between the two halves. Default 0.
+  units           pt | in | mm | cm. Default in.
+  flip            none | long_edge | short_edge. Which edge your printer flips
+                  on. See below — this is the one to get right.
+  back            Keep the last N pages at the end (e.g. a back cover); the blank
+                  pages needed to reach a multiple of 4 are inserted BEFORE them
+                  instead of after. Default 0.
+
+CHOOSING `flip` — match it to your printer's two-sided setting:
+
+  Sheet orientation      Use              Because
+  ---------------------  ---------------  ------------------------------------
+  landscape (default)    flip=long_edge   the long edge is horizontal, so the
+                                          duplexer turns the sheet top-to-bottom
+                                          and the backs need a 180 turn
+  portrait               flip=short_edge  same reasoning, other axis
+  single-sided output    flip=none        no compensation at all
+
+  If the backs print upside down, the other value is the fix.
+
+Examples:
+  --booklet                                     all defaults
+  --booklet \"paper=letter,flip=long_edge\"
+  --booklet \"binding_margin=0.25,units=in,back=1\"
+
+Conflicts with --nup.
+";
+
 const EXIT_STATUS_HELP: &str = "EXIT STATUS:
     0  Success -- the output was written.  Also returned by --dry-run, which
        validates and runs the whole pipeline but writes no file.
@@ -58,7 +134,7 @@ struct Args {
     #[arg(
         long,
         action = clap::ArgAction::Append,
-        help = "Insert a blank page. Spec: '<named-size>' (e.g. 'letter', 'a4') or 'w=N,h=N[,units=in|pt|mm|cm][,count=N]'"
+        help = "Insert a blank page. Spec: '<named-size>' (letter, a4, legal) or 'w=N,h=N[,units=in|pt|mm|cm][,count=N]'"
     )]
     blank_page: Vec<BlankPageSpec>,
     #[arg(
@@ -101,7 +177,8 @@ struct Args {
     #[arg(
         long,
         conflicts_with = "booklet",
-        help = "N-up imposition (multiple input pages per output sheet). Conflicts with --booklet"
+        help = "N-up imposition (multiple input pages per output sheet). Conflicts with --booklet",
+        long_help = NUP_HELP
     )]
     nup: Option<NupSpec>,
     #[arg(
@@ -109,7 +186,8 @@ struct Args {
         default_missing_value = "",
         num_args = 0..=1,
         conflicts_with = "nup",
-        help = "Booklet imposition for saddle-stitched printing; pass with no value for defaults. Spec keys: paper, orientation, duplex_flip, back, etc. Conflicts with --nup"
+        help = "Booklet imposition for saddle-stitched printing; pass with no value for defaults. Conflicts with --nup",
+        long_help = BOOKLET_HELP
     )]
     booklet: Option<BookletSpec>,
     #[arg(
@@ -686,4 +764,102 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
             "draw_images": args.draw_image.len(),
         },
     }))
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::{BOOKLET_HELP, NUP_HELP};
+    use crate::spec_types::{BOOKLET_KEYS, NUP_KEYS};
+
+    /// Whole-word membership: splits on anything that cannot appear in a spec key,
+    /// so `n` matches the standalone `n` entry without also matching the `n` inside
+    /// `none`, and `paper` does not spuriously match `paper_w`.
+    fn documents(help: &str, key: &str) -> bool {
+        help.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .any(|word| word == key)
+    }
+
+    /// `--help` is the spec surface an agent reads, so an undocumented key is a
+    /// defect, not an omission. Checking against the parser's own key list — rather
+    /// than a copy of it — is what makes this drift-proof: add a key to `NUP_KEYS`
+    /// and forget the help text, and this fails.
+    #[test]
+    fn nup_help_documents_every_key() {
+        for key in NUP_KEYS {
+            assert!(
+                documents(NUP_HELP, key),
+                "--nup help does not document the key '{key}' (bug-0005)"
+            );
+        }
+    }
+
+    #[test]
+    fn booklet_help_documents_every_key() {
+        for key in BOOKLET_KEYS {
+            assert!(
+                documents(BOOKLET_HELP, key),
+                "--booklet help does not document the key '{key}' (bug-0005)"
+            );
+        }
+    }
+
+    /// The other half of bug-0005: the help advertised two keys the parser rejects.
+    ///
+    /// Asserting on the `key=` form rather than the bare word is deliberate. The
+    /// word "orientation" legitimately appears in the booklet help now, in the
+    /// sentence explaining that the right `flip` depends on sheet orientation — it
+    /// is the *key* `orientation=` that must not be suggested, because
+    /// `--booklet "orientation=landscape"` is an error.
+    #[test]
+    fn booklet_help_advertises_no_nonexistent_keys() {
+        assert!(
+            !documents(BOOKLET_HELP, "duplex_flip"),
+            "--booklet help names 'duplex_flip'; the real key is 'flip' (bug-0005)"
+        );
+        assert!(
+            !BOOKLET_HELP.contains("orientation="),
+            "--booklet help suggests 'orientation=', which the parser rejects (bug-0005)"
+        );
+        for key in BOOKLET_KEYS {
+            assert!(
+                !NUP_KEYS.contains(key) || documents(NUP_HELP, key),
+                "shared key '{key}' documented for booklet but not for nup"
+            );
+        }
+    }
+
+    /// An unknown key must name the valid ones. The caller who trips this has
+    /// already shown they do not know the key set, so the error is the one place
+    /// the answer is guaranteed to reach them.
+    ///
+    /// `duplex_flip` is the motivating case: `--help` advertised it for three
+    /// releases (bug-0005), so scripts written against it exist, and "Unknown key"
+    /// alone never reveals that the real name is `flip`.
+    #[test]
+    fn unknown_key_error_lists_the_valid_keys() {
+        use crate::spec_types::BookletSpec;
+        use std::str::FromStr;
+
+        let err = BookletSpec::from_str("duplex_flip=short_edge")
+            .expect_err("duplex_flip is not a booklet key");
+        assert!(
+            err.contains("duplex_flip"),
+            "should name the bad key: {err}"
+        );
+        for key in BOOKLET_KEYS {
+            assert!(err.contains(key), "should list valid key '{key}': {err}");
+        }
+    }
+
+    /// The three named paper sizes `parse_paper_size` accepts must all be offered.
+    /// `legal` was missing from the `--blank-page` help (bug-0005).
+    #[test]
+    fn paper_sizes_are_all_offered() {
+        for size in ["letter", "a4", "legal"] {
+            assert!(
+                documents(NUP_HELP, size) && documents(BOOKLET_HELP, size),
+                "paper size '{size}' missing from imposition help"
+            );
+        }
+    }
 }

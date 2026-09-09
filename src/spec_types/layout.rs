@@ -155,7 +155,7 @@ pub struct NupSpec {
     pub repeat: u32,
 }
 
-const NUP_KEYS: &[&str] = &[
+pub const NUP_KEYS: &[&str] = &[
     "n",
     "cols",
     "rows",
@@ -274,7 +274,7 @@ pub struct BookletSpec {
     pub back: u32,
 }
 
-const BOOKLET_KEYS: &[&str] = &[
+pub const BOOKLET_KEYS: &[&str] = &[
     "paper",
     "paper_w",
     "paper_h",

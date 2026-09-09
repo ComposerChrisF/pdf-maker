@@ -291,7 +291,18 @@ impl KvParser {
             let k = k.trim().to_string();
             let v = v.trim().to_string();
             if !allowed_keys.contains(&k.as_str()) {
-                return Err(format!("Unknown {type_label} key: '{k}'"));
+                // List the valid keys rather than only rejecting the bad one. Same
+                // fault class as bug-0005 — usage knowledge that is not discoverable
+                // from the binary — and it matters most exactly here, where the
+                // caller has already demonstrated they do not know the key set.
+                // `--booklet duplex_flip=...` is the motivating case: that key was
+                // advertised by --help for three releases, so scripts written against
+                // it exist, and "Unknown key" alone does not reveal that the real
+                // name is `flip`.
+                return Err(format!(
+                    "Unknown {type_label} key: '{k}'. Valid keys: {}",
+                    allowed_keys.join(", ")
+                ));
             }
             if pairs.iter().any(|(existing, _)| existing == &k) {
                 return Err(format!("Duplicate {type_label} key: '{k}'"));

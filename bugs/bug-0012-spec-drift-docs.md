@@ -108,7 +108,9 @@ value depends on the **sheet orientation**, not on preference:
 | **Portrait** (e.g. `paper_w=612,paper_h=792`) | `flip=short_edge` | The short edge is horizontal; same reasoning, other axis |
 | Single-sided output | `flip=none` | No compensation at all |
 
-State it in `--help` and in the README booklet section, as a table rather than prose — the
+**The `--help` half landed 2026-09-09 with bug-0005** — the table is in `BOOKLET_HELP`,
+including the “if the backs print upside down, the other value is the fix” diagnostic.  What
+remains for this doc pass is the **README** booklet section.  State it as a table rather than prose — the
 failure mode is choosing the wrong one, and a table is checkable at a glance where a sentence
 is not.  Worth adding the diagnostic too: **if the backs print upside down, the other `flip`
 value is the fix**, which saves the reader deriving the geometry.

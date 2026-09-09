@@ -5,6 +5,29 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.17.0] — 2026-09-09
+### Fixed
+- **`--help` no longer advertises `--booklet` keys that do not exist, and now
+  documents `--nup`’s keys at all** (bug-0005).  The booklet help named
+  `orientation` and `duplex_flip` — the first is not a booklet key and the second
+  was renamed to `flip` before v0.10.0 shipped — so following the help verbatim
+  produced an error.  The `--nup` help listed no keys whatsoever, leaving all
+  thirteen undiscoverable from the binary.  Both now carry a full key table under
+  `long_help`, and `--blank-page` offers `legal` alongside `letter` and `a4`.
+- The `--booklet` help gained a **table for choosing `flip`** by sheet
+  orientation, graduated from bug-0001 — landscape takes `long_edge`, portrait
+  takes `short_edge` — with the diagnostic that if the backs print upside down,
+  the other value is the fix.
+
+### Changed
+- **An unknown spec key now lists the valid keys for that spec.**  Applies to
+  every `key=value` flag (`--nup`, `--booklet`, `--watermark`, `--draw-*`,
+  `--overlay`, `--pad-last-page-file`, `--blank-page`), not just the two whose
+  help was wrong.  `--booklet "duplex_flip=..."` now answers with
+  `Valid keys: paper, paper_w, paper_h, binding_margin, units, flip, back`,
+  which is the only place a caller working from stale documentation will see the
+  real name.
+
 ## [0.16.0] — 2026-09-09
 ### Fixed
 - **`--booklet` duplex-flip compensation was inverted on landscape sheets**

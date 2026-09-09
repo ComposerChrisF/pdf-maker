@@ -49,8 +49,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Fourteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0007,
-bug-0008 and bug-0016 (all fixed 2026-09-09 and deleted per the bug-reports lifecycle).  (bug-0016 was filed
+**Thirteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
+bug-0007, bug-0008 and bug-0016 (all fixed 2026-09-09 and deleted per the bug-reports
+lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -63,10 +64,14 @@ _decision_ need Chris’s ruling before any code changes; do not guess.
 Three pdf-maker prerequisites, two medpdf prerequisites, and one long-lead item that travels
 with them.  All are on the imposition path; none is waiting on a ruling.
 
-- [ ] **bug-0005** — `--help` advertises booklet keys that do not exist (`orientation`,
-  `duplex_flip`) and lists no `--nup` keys at all.  **First**, because it is cheap, needs no
-  decision, and `--tile` adds a _third_ imposition mode: writing its help text against a pair
-  that documents nothing would compound the fault three ways instead of two.
+- [x] **bug-0005 — DONE 2026-09-09.**  Both imposition flags now carry a full key table under
+  `long_help`, `--blank-page` offers `legal`, and the `flip`-by-orientation table graduated in
+  from bug-0001.  Pinned by drift guards that check the help text against the parser’s own
+  `NUP_KEYS` / `BOOKLET_KEYS` — **not against a copy of them** — so adding a key without
+  documenting it now fails the build.  Verified by deleting a key from the help and watching
+  the test name it.  Scope was extended one line beyond the report: an unknown key now lists
+  the valid ones, for every spec type, since that is the same fault class and the error is
+  where a caller working from stale docs actually looks.
 - [ ] **bug-0006** — oversized margins/gutters give non-positive imposition cells: mirrored,
   shrunken pages at exit 0.  **The hard prerequisite.**  Its fix is to extract the cell
   geometry into one checked computation, which is exactly the code `--tile` reuses; doing it
