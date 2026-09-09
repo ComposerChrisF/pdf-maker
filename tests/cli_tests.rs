@@ -1418,3 +1418,237 @@ fn cli_static_usage_errors_exit_2() {
     let (code, _) = run_expecting_failure(&["-o", &o, &i, "1,99"]);
     assert_eq!(code, 1, "an out-of-range page is a tool error, not usage");
 }
+
+/// Build a single-page PDF of the given size, in points.
+fn create_sized_pdf(path: &Path, w: f32, h: f32) {
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            path.to_str().unwrap(),
+            "--blank-page",
+            &format!("w={w},h={h},units=pt"),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+/// The defining property of tiling: the sheets must COVER the source, with the
+/// requested overlap, and nothing may fall between two tiles.
+///
+/// Asserted as a property rather than against a table of expected rectangles,
+/// because the sheet count depends on paper, overlap and orientation — a hardcoded
+/// expectation would pin an example instead of the contract. Reconstructs each
+/// sheet's source window from its `cm` translation and checks the windows tile the
+/// source without a gap.
+#[test]
+fn cli_tile_sheets_cover_the_source_with_overlap() {
+    let src = tempfile::NamedTempFile::new().unwrap();
+    // 48in x 12in banner: 3456 x 864 pt.
+    create_sized_pdf(src.path(), 3456.0, 864.0);
+    let out = tempfile::NamedTempFile::new().unwrap();
+
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            out.path().to_str().unwrap(),
+            src.path().to_str().unwrap(),
+            "all",
+            "--tile",
+            "paper_w=792,paper_h=1224,units=pt,overlap=54,orientation=portrait",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let doc = Document::load(out.path()).unwrap();
+    let n = doc.get_pages().len();
+    assert!(n >= 2, "a 48in banner must need several tabloid sheets");
+
+    // Each sheet shows source x in [-tx, -tx + sheet_w], where tx is the translation.
+    let mut windows: Vec<(f64, f64)> = Vec::new();
+    for page in 1..=n as u32 {
+        let tx = placement_rects(out.path(), page)
+            .first()
+            .map(|r| r.0)
+            .expect("each sheet carries one placement");
+        // `re` gives the clip rect origin, which is where the page's box landed.
+        windows.push((-tx, -tx + 792.0));
+    }
+    windows.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    // Coverage: the union must span the whole source, with no gap between windows.
+    assert!(
+        windows[0].0 <= 0.0,
+        "first tile must reach the source's left edge"
+    );
+    assert!(
+        windows.last().unwrap().1 >= 3456.0,
+        "last tile must reach the source's right edge"
+    );
+    for pair in windows.windows(2) {
+        let gap = pair[1].0 - pair[0].1;
+        assert!(
+            gap <= 0.0,
+            "tiles must not leave a gap: {:?} then {:?}",
+            pair[0],
+            pair[1]
+        );
+        // And the overlap must be the one that was asked for.
+        assert!(
+            (-gap - 54.0).abs() < 0.5,
+            "expected 54pt of overlap, got {:.1}pt",
+            -gap
+        );
+    }
+}
+
+/// `orientation=auto` picks whichever sheet orientation yields FEWER sheets.
+///
+/// Not cosmetic: for a wide banner it is the difference between five sheets and six,
+/// and for the conference banner that motivated plan-0003 it is four versus seven.
+#[test]
+fn cli_tile_auto_orientation_minimises_sheet_count() {
+    let src = tempfile::NamedTempFile::new().unwrap();
+    create_sized_pdf(src.path(), 3456.0, 864.0);
+
+    let count = |orientation: &str| -> u64 {
+        let out = tempfile::NamedTempFile::new().unwrap();
+        let res = pdf_maker_bin()
+            .args([
+                "-o",
+                out.path().to_str().unwrap(),
+                src.path().to_str().unwrap(),
+                "all",
+                "--tile",
+                &format!("paper_w=792,paper_h=1224,units=pt,orientation={orientation}"),
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(res.status.success());
+        let v: serde_json::Value = serde_json::from_slice(&res.stdout).unwrap();
+        v["tile"]["sheets"].as_u64().unwrap()
+    };
+
+    let (portrait, landscape, auto) = (count("portrait"), count("landscape"), count("auto"));
+    assert_eq!(
+        auto,
+        portrait.min(landscape),
+        "auto ({auto}) should equal the better of portrait ({portrait}) and landscape ({landscape})"
+    );
+    assert_ne!(
+        portrait, landscape,
+        "this fixture should distinguish the two, or the test proves nothing"
+    );
+}
+
+/// Every guard that stands between a plausible-looking spec and a ruined print run.
+#[test]
+fn cli_tile_refuses_degenerate_and_runaway_geometry() {
+    let src = tempfile::NamedTempFile::new().unwrap();
+    create_sized_pdf(src.path(), 3456.0, 864.0);
+    let out = tempfile::NamedTempFile::new().unwrap();
+    let i = src.path().to_str().unwrap().to_string();
+    let o = out.path().to_str().unwrap().to_string();
+
+    let try_spec = |spec: &str| -> (i32, String) {
+        let res = pdf_maker_bin()
+            .args(["-o", &o, &i, "all", "--tile", spec])
+            .output()
+            .unwrap();
+        (
+            res.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&res.stderr).into_owned(),
+        )
+    };
+
+    // An overlap at least as wide as the printable window never terminates.
+    let (code, err) = try_spec("paper=letter,overlap=9,units=in");
+    assert_eq!(code, 1, "degenerate geometry is a tool error");
+    assert!(err.contains("overlap"), "{err}");
+
+    // A negative margin is legal only while the overlap still covers it.
+    let (code, err) = try_spec("paper=letter,margin=-0.5,overlap=0.25,units=in");
+    assert_eq!(code, 1);
+    assert!(err.contains("gap"), "the error must name the gap: {err}");
+
+    // ...and legal when it does.
+    let (code, _) = try_spec("paper=letter,margin=-0.25,overlap=0.75,units=in");
+    assert_eq!(code, 0, "a bleed covered by the overlap must be allowed");
+
+    // The sheet ceiling catches a units mistake before it reaches a printer.
+    let (code, err) = try_spec("paper_w=1,paper_h=1,overlap=0.25,units=in");
+    assert_eq!(code, 1);
+    assert!(err.contains("max_sheets"), "{err}");
+    let (code, _) = try_spec("paper_w=1,paper_h=1,overlap=0.25,units=in,max_sheets=2000");
+    assert_eq!(code, 0, "raising the ceiling must let it through");
+}
+
+/// `marks=labels` captions each sheet with its source page and cell, so a stack of
+/// printed sheets can be assembled without the source on screen.
+#[test]
+fn cli_tile_labels_identify_every_sheet() {
+    let src = tempfile::NamedTempFile::new().unwrap();
+    create_sized_pdf(src.path(), 3456.0, 864.0);
+    let out = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            out.path().to_str().unwrap(),
+            src.path().to_str().unwrap(),
+            "all",
+            "--tile",
+            "paper_w=792,paper_h=1224,units=pt,orientation=portrait,marks=labels",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let doc = Document::load(out.path()).unwrap();
+    let n = doc.get_pages().len() as u32;
+    for page in 1..=n {
+        let id = *doc.get_pages().get(&page).unwrap();
+        let content = doc.get_and_decode_page_content(id).unwrap();
+        let text: String = content
+            .operations
+            .iter()
+            .filter(|op| op.operator == "Tj")
+            .filter_map(|op| op.operands.first())
+            .filter_map(|o| o.as_str().ok())
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .collect();
+        assert!(
+            text.contains(&format!("C{page}")),
+            "sheet {page} should be captioned with its own cell, got {text:?}"
+        );
+        assert!(
+            text.contains("p1"),
+            "caption must name the source page, since pages=all interleaves grids"
+        );
+    }
+}
+
+/// `--tile` is mutually exclusive with the other two imposition modes: they are one
+/// `else if` chain over the page list.
+#[test]
+fn cli_tile_conflicts_with_other_imposition_modes() {
+    let src = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(src.path(), 2);
+    let out = tempfile::NamedTempFile::new().unwrap();
+    let i = src.path().to_str().unwrap().to_string();
+    let o = out.path().to_str().unwrap().to_string();
+
+    for other in [["--nup", "n=4"], ["--booklet", "paper=letter"]] {
+        let res = pdf_maker_bin()
+            .args(["-o", &o, &i, "all", "--tile", "paper=letter"])
+            .args(other)
+            .output()
+            .unwrap();
+        assert_eq!(
+            res.status.code(),
+            Some(2),
+            "conflicting imposition modes are a usage error"
+        );
+    }
+}

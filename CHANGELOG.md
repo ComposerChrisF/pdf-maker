@@ -5,6 +5,49 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.21.0] — 2026-09-09
+### Added
+- **`--tile`: split one large page across many sheets, with overlap for taping**
+  (plan-0003).  The inverse of `--nup`, and the replacement for the one Microsoft
+  Publisher capability with no other home in the portfolio — Publisher is removed
+  from Microsoft 365 on 2026-10-01 and takes tiled banner printing with it.
+
+  ```
+  pdf-maker -o banner-tiled.pdf banner.pdf all \
+    --tile "paper_w=11,paper_h=17,units=in,marks=labels"
+  ```
+
+  Keys: `paper` / `paper_w` / `paper_h`, `orientation`, `overlap`, `margin`,
+  `pages`, `order`, `marks`, `scale`, `align`, `max_sheets`, `units`.  Full table
+  in `--help`.  Notable defaults and why they are what they are:
+
+  - **`overlap` defaults to 0.75in, not zero and not 0.5in.**  Consumer printers
+    hold roughly a quarter inch at each edge they cannot print, so the overlap you
+    actually get when taping is `overlap − 2 × that border`.  At 0.5in that is
+    zero, and any drift opens a white line through the artwork.
+  - **`orientation=auto` picks whichever sheet orientation yields fewer sheets.**
+    Not cosmetic: a 48×12in banner is five tabloid sheets one way and six the
+    other, and the conference banner that motivated this is four versus seven.
+  - **`align=center`** spreads the grid’s surplus over both ends, so every sheet
+    carries a similar amount rather than leaving one nearly blank.
+  - **`max_sheets=400`** refuses a runaway run.  `--tile` is the first pdf-maker
+    operation whose output size is _derived_ rather than stated, so a units
+    mistake turns one page into hundreds of sheets.
+
+  Guards, all exit 1 naming the arithmetic: an `overlap` at least as wide as the
+  printable window (the grid would never terminate), and an overlap too small to
+  cover a negative `margin` (the tiles would not meet, silently dropping a strip
+  of artwork at every seam).  **Coverage, not sign, is the invariant** — a
+  negative margin is legal exactly while the overlap still covers it.
+
+  `marks=labels` captions each sheet `p1 R2C3 of 5x1`, naming the source page as
+  well as the cell because `pages=all` interleaves several grids into one file.
+  `marks=crop` draws the tile boundary for butting rather than lapping.
+
+  `--tile` runs in the same pipeline slot as `--nup` and `--booklet` — after
+  merge, before overlays and padding — so a watermark’s `pages=` spec addresses
+  **sheets**, and `--pad-to` pads the sheet count.  It conflicts with both.
+
 ## [0.20.0] — 2026-09-09
 ### Fixed
 - **Security: asking to restrict a document without a password is now refused

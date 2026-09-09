@@ -155,6 +155,182 @@ pub struct NupSpec {
     pub repeat: u32,
 }
 
+/// Where the grid's surplus coverage goes when the tiles do not divide evenly.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum TileAlign {
+    /// Split the surplus between both ends, so every sheet carries roughly the same
+    /// amount of artwork. Default because the alternative leaves one nearly blank
+    /// sheet, which reads as a bug to whoever prints it.
+    #[default]
+    Center,
+    /// Pin the first tile to the source's left/top edge and leave all the surplus on
+    /// the final sheet.
+    Start,
+}
+
+/// Which assembly marks to draw.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TileMarks {
+    /// Row/column captions naming the source page and cell.
+    pub labels: bool,
+    /// Trim lines at the tile boundary, for butting rather than lapping.
+    pub crop: bool,
+}
+
+/// Sheet order across the grid.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum TileOrder {
+    /// Left to right, then top to bottom.
+    #[default]
+    Row,
+    /// Top to bottom, then left to right.
+    Col,
+}
+
+fn parse_tile_align(v: &str) -> Result<TileAlign, String> {
+    match v.to_lowercase().as_str() {
+        "center" | "centre" => Ok(TileAlign::Center),
+        "start" => Ok(TileAlign::Start),
+        _ => Err(format!("Invalid align: '{v}'. Use center or start.")),
+    }
+}
+
+fn parse_tile_order(v: &str) -> Result<TileOrder, String> {
+    match v.to_lowercase().as_str() {
+        "row" => Ok(TileOrder::Row),
+        "col" | "column" => Ok(TileOrder::Col),
+        _ => Err(format!("Invalid order: '{v}'. Use row or col.")),
+    }
+}
+
+fn parse_tile_marks(v: &str) -> Result<TileMarks, String> {
+    let mut marks = TileMarks::default();
+    for part in v.split('+') {
+        match part.trim().to_lowercase().as_str() {
+            "none" => {}
+            "labels" => marks.labels = true,
+            "crop" => marks.crop = true,
+            "both" => {
+                marks.labels = true;
+                marks.crop = true;
+            }
+            other => {
+                return Err(format!(
+                    "Invalid marks: '{other}'. Use none, labels, crop, both, or labels+crop."
+                ));
+            }
+        }
+    }
+    Ok(marks)
+}
+
+/// Split one large page across many smaller sheets, with overlap for taping.
+///
+/// The inverse of [`NupSpec`]: N-up puts many source pages on one sheet, tiling puts
+/// one source page on many sheets. Both compute a grid over a target paper size and
+/// place a scaled source rectangle into each cell.
+///
+/// Unlike `NupSpec`, the paper dimensions here are stored **unrotated** and the
+/// orientation is resolved later, in `apply_tile`. That is not an inconsistency: the
+/// N-up grid is known at parse time, so `apply_orientation` can run there, whereas
+/// the tile grid depends on the source page's size, which the parser has never seen.
+#[derive(Debug, Clone)]
+pub struct TileSpec {
+    pub paper_width: f32,
+    pub paper_height: f32,
+    pub orientation: Orientation,
+    /// Overlap between adjacent tiles, in points. Never zero by default — see the
+    /// `--help` text for why.
+    pub overlap: f32,
+    /// Unprintable margin held clear inside each sheet, in points.
+    pub margin: f32,
+    pub pages: String,
+    pub order: TileOrder,
+    pub marks: TileMarks,
+    /// Output scale, applied to the source *before* the grid is computed.
+    pub scale: f32,
+    pub align: TileAlign,
+    /// Refuse a run that would emit more sheets than this.
+    pub max_sheets: u32,
+}
+
+pub const TILE_KEYS: &[&str] = &[
+    "paper",
+    "paper_w",
+    "paper_h",
+    "orientation",
+    "overlap",
+    "margin",
+    "pages",
+    "order",
+    "marks",
+    "scale",
+    "align",
+    "max_sheets",
+    "units",
+];
+
+impl FromStr for TileSpec {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let kv = KvParser::parse(s, "tile", TILE_KEYS)?;
+
+        let paper = kv.get("paper").map(str::to_string);
+        let paper_w = kv.optional_positive("paper_w")?;
+        let paper_h = kv.optional_positive("paper_h")?;
+        let orientation = kv.optional_with("orientation", parse_orientation)?;
+        let unit: Unit = kv.optional_units()?.map(Unit::from).unwrap_or(Unit::In);
+
+        // `overlap` and `margin` are offsets, not extents, so they are NOT sign-checked
+        // here (the 2026-09-09 ruling). The invariant that actually matters for tiling
+        // is COVERAGE — whether adjacent tiles still meet — and that is a derived
+        // quantity checked in `apply_tile`, where the sheet and source sizes are known.
+        let overlap = kv.optional_parse::<f32>("overlap")?;
+        let margin = kv.optional_parse::<f32>("margin")?;
+
+        let scale = kv.optional_positive("scale")?.unwrap_or(1.0);
+        let pages = kv.get("pages").unwrap_or("all").to_string();
+        let order = kv
+            .optional_with("order", parse_tile_order)?
+            .unwrap_or_default();
+        let marks = kv
+            .optional_with("marks", parse_tile_marks)?
+            .unwrap_or_default();
+        let align = kv
+            .optional_with("align", parse_tile_align)?
+            .unwrap_or_default();
+        let max_sheets = kv.optional_with("max_sheets", |v| {
+            let n = v
+                .parse::<u32>()
+                .map_err(|_| format!("Invalid max_sheets value: '{v}'. Use a positive integer."))?;
+            if n == 0 {
+                Err("max_sheets must be a positive integer".to_string())
+            } else {
+                Ok(n)
+            }
+        })?;
+
+        let (pw, ph) = resolve_paper_dims(&paper, paper_w, paper_h, unit, (612.0, 792.0))?;
+
+        Ok(TileSpec {
+            paper_width: pw,
+            paper_height: ph,
+            orientation: orientation.unwrap_or_default(),
+            // 0.75in, not 0.5in: a consumer printer holds roughly a quarter inch
+            // unprintable at each edge, so the overlap the person taping the sheets
+            // actually has is `overlap - 2 x unprintable`. At 0.5in that is zero.
+            overlap: unit.to_points(overlap.unwrap_or(0.75)),
+            margin: unit.to_points(margin.unwrap_or(0.0)),
+            pages,
+            order,
+            marks,
+            scale,
+            align,
+            max_sheets: max_sheets.unwrap_or(400),
+        })
+    }
+}
+
 pub const NUP_KEYS: &[&str] = &[
     "n",
     "cols",

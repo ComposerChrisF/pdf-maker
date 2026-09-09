@@ -108,9 +108,10 @@ with them.  All are on the imposition path; none is waiting on a ruling.
   placement rotation **transposes** it, so `--tile` must re-measure with its own rotation
   rather than reuse that call.
 
-- [ ] **plan-0003 implementation — all four prerequisites have landed** (bug-0005, bug-0006,
-  bug-0009, bug-0018, plus the medpdf 0.13.0/0.14.0 adoptions).  `--tile` is unblocked.  Land it **before**
-  bug-0012, so the doc sweep documents all three imposition modes once instead of twice.
+- [x] **plan-0003 — IMPLEMENTED 2026-09-09.**  `--tile` ships in v0.21.0; the plan file is
+  deleted per the plan-files lifecycle, with its durable content graduated into `--help`
+  (the key table, the overlap rationale, the auto-orientation rule) and the CHANGELOG.
+  The README half belongs to bug-0012’s doc pass.
 
 **bug-0008 is _not_ a prerequisite**, contrary to plan-0003’s first draft.  It concerns
 `auto_grid` mapping an `n` onto a grid; `--tile` derives its grid from geometry and never calls

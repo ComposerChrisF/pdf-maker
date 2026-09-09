@@ -15,8 +15,56 @@ use medpdf::{EncryptionAlgorithm, EncryptionParams};
 use medpdf_image::DrawImageParams;
 use spec_types::{
     BlankPageSpec, BookletSpec, DrawImageSpec, DrawLineSpec, DrawRectSpec, NupSpec, OverlaySpec,
-    PadFileSpec, PadToSpec, WatermarkSpec,
+    PadFileSpec, PadToSpec, TileSpec, WatermarkSpec,
 };
+
+/// Long help for `--tile`.
+///
+/// Same drift guard as the other two, via `tile_help_documents_every_key`.
+const TILE_HELP: &str = "\
+Tile one large page across many smaller sheets, with overlap so the sheets can be
+taped together. The inverse of --nup: N-up puts many pages on one sheet, --tile puts
+one page on many.
+
+Spec keys (comma-separated key=value):
+  paper        Sheet size: letter, a4, or legal. Default letter.
+  paper_w,     Custom sheet size, in `units`. Use instead of paper=.
+  paper_h
+  orientation  portrait | landscape | auto. Default auto, which picks whichever
+               yields FEWER sheets — not cosmetic, a wide banner is often half as
+               many sheets one way as the other.
+  overlap      Overlap between adjacent tiles. Default 0.75in. See below; do not
+               set this to 0.
+  margin       Border the printer cannot print, held clear on each sheet.
+               Default 0.
+  pages        Which source pages to tile. Default all.
+  order        row (left-to-right, then down) | col. Default row.
+  marks        none | labels | crop | both | labels+crop. Default none.
+               labels caption each sheet with its page and cell; crop draws the
+               tile boundary for butting rather than lapping.
+  scale        Output scale, applied BEFORE the grid is computed. Default 1.0.
+               This is NOT fit-to-page: the point of tiling is 1:1 output.
+  align        center | start. Where the grid's surplus goes. Default center, so
+               every sheet carries a similar amount rather than leaving one
+               nearly blank.
+  max_sheets   Refuse a run larger than this. Default 400. A units mistake can
+               turn one page into hundreds of sheets.
+  units        pt | in | mm | cm. Default in.
+
+WHY THE OVERLAP DEFAULT IS NOT ZERO:
+  Consumer printers hold roughly a quarter inch at each edge that they cannot
+  print. The overlap you actually get when taping is `overlap - 2 x that border`,
+  so an overlap of 0.5in leaves nothing to tape against and any drift opens a
+  white line through the artwork. 0.75in leaves about a quarter inch of real
+  overlap. Raise it if your printer's border is wider.
+
+Examples:
+  --tile \"paper=tabloid\"                       (not a named size — use paper_w/paper_h)
+  --tile \"paper_w=11,paper_h=17,marks=labels\"
+  --tile \"paper=letter,overlap=1,margin=0.25,align=start\"
+
+Conflicts with --nup and --booklet.
+";
 
 /// Long help for `--nup`.
 ///
@@ -202,6 +250,14 @@ struct Args {
         long_help = BOOKLET_HELP
     )]
     booklet: Option<BookletSpec>,
+    #[arg(
+        long,
+        value_name = "TILE",
+        conflicts_with_all = ["nup", "booklet"],
+        help = "Tile one large page across many sheets, with overlap for taping. Conflicts with --nup and --booklet",
+        long_help = TILE_HELP
+    )]
+    tile: Option<TileSpec>,
     #[arg(
         long,
         help = "Validate and run the whole pipeline but write no output file (exit 0 on success)"
@@ -729,6 +785,24 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         None
     };
 
+    // --tile sits in the same slot as the other two imposition modes: after merge,
+    // before overlays and drawing, before padding. So a watermark's `pages=` spec
+    // addresses SHEETS rather than source pages, and `--pad-to` pads the sheet count,
+    // which is what a duplex print of the tiles wants (plan-0003, decision 2).
+    let tile_report = if let Some(ref tile) = args.tile {
+        eprintln!("\n--- Tiling ---");
+        let page_count = page_ids.len() as u32;
+        let selected = page_spec::expand(&tile.pages, page_count, "--tile pages")?;
+        Some(imposition::apply_tile(
+            &mut doc,
+            &mut page_ids,
+            tile,
+            &selected,
+        )?)
+    } else {
+        None
+    };
+
     apply_overlays(&mut doc, &page_ids, &args.overlay)?;
     let font_object_cache = apply_drawing_commands(
         &mut doc,
@@ -788,9 +862,19 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         "nup"
     } else if args.booklet.is_some() {
         "booklet"
+    } else if args.tile.is_some() {
+        "tile"
     } else {
         "none"
     };
+    let tile_report = tile_report.map(|r| {
+        json!({
+            "sheets": r.sheets,
+            "sheet_width_pt": (r.sheet_w * 10.0).round() / 10.0,
+            "sheet_height_pt": (r.sheet_h * 10.0).round() / 10.0,
+            "grids": r.grids.iter().map(|(c, rr)| json!({"cols": c, "rows": rr})).collect::<Vec<_>>(),
+        })
+    });
     // Derived geometry the caller never stated, so it is reported rather than left
     // to be inferred from the output (bug-0006). `overhang` is non-zero only for a
     // negative margin — a deliberate bleed — and naming it is what makes that
@@ -816,6 +900,7 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
         "encrypted": encrypted,
         "imposition": imposition,
         "imposition_geometry": imposition_geometry,
+        "tile": tile_report,
         "inputs": input_report,
         "operations": {
             "blank_pages": args.blank_page.iter().map(|s| s.count as u64).sum::<u64>(),
@@ -830,8 +915,8 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
 
 #[cfg(test)]
 mod help_tests {
-    use super::{BOOKLET_HELP, NUP_HELP};
-    use crate::spec_types::{BOOKLET_KEYS, NUP_KEYS};
+    use super::{BOOKLET_HELP, NUP_HELP, TILE_HELP};
+    use crate::spec_types::{BOOKLET_KEYS, NUP_KEYS, TILE_KEYS};
 
     /// Whole-word membership: splits on anything that cannot appear in a spec key,
     /// so `n` matches the standalone `n` entry without also matching the `n` inside
@@ -851,6 +936,16 @@ mod help_tests {
             assert!(
                 documents(NUP_HELP, key),
                 "--nup help does not document the key '{key}' (bug-0005)"
+            );
+        }
+    }
+
+    #[test]
+    fn tile_help_documents_every_key() {
+        for key in TILE_KEYS {
+            assert!(
+                documents(TILE_HELP, key),
+                "--tile help does not document the key '{key}'"
             );
         }
     }

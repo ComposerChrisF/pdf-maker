@@ -1,7 +1,9 @@
 use lopdf::{Document, ObjectId};
 use medpdf::{DrawLineParams, MedpdfError, PdfColor, PlacePageParams};
 
-use crate::spec_types::{BookletSpec, DuplexFlip, GridOrder, NupSpec};
+use crate::spec_types::{
+    BookletSpec, DuplexFlip, GridOrder, NupSpec, Orientation, TileAlign, TileOrder, TileSpec,
+};
 
 struct PagePlacement {
     source_page: u32, // 1-based; 0 = blank slot (skip)
@@ -277,6 +279,393 @@ pub fn apply_nup(
 }
 
 /// Returns the per-page slot geometry, for the same reason as [`apply_nup`].
+/// One source page's tiling plan, on a decided sheet orientation.
+struct TilePlan {
+    cols: u32,
+    rows: u32,
+    /// Source span each sheet reproduces, in points.
+    window_w: f64,
+    window_h: f64,
+    /// Distance between adjacent tile origins, in source points.
+    step_w: f64,
+    step_h: f64,
+    /// Surplus coverage held back from the first tile, so the grid is centred.
+    lead_w: f64,
+    lead_h: f64,
+    src_w: f64,
+    src_h: f64,
+}
+
+impl TilePlan {
+    /// Computes the grid for one source page, or fails naming the arithmetic.
+    ///
+    /// Two things can go wrong, and they are different faults:
+    ///
+    /// * **Non-positive step** — an `overlap` at least as large as the printable
+    ///   window means each tile starts no further along than the last, so the grid
+    ///   never terminates. This is the tiling form of `bug-0006`'s degenerate cell.
+    /// * **Gap** — adjacent tiles that do not meet, which silently drops a strip of
+    ///   source content at every seam. Since only `sheet - 2*margin` of each sheet is
+    ///   reliably printed, gap-free assembly needs `overlap >= max(0, -2*margin)`.
+    ///   The `-2*margin` term is what makes a negative `margin` (bleeding into the
+    ///   printer's unprintable border) legal exactly while the overlap still covers
+    ///   it — sign is not the criterion, coverage is.
+    fn compute(
+        src_w: f64,
+        src_h: f64,
+        sheet_w: f64,
+        sheet_h: f64,
+        overlap: f64,
+        margin: f64,
+        align: TileAlign,
+    ) -> Result<Self, MedpdfError> {
+        let window_w = sheet_w - 2.0 * margin;
+        let window_h = sheet_h - 2.0 * margin;
+        let step_w = window_w - overlap;
+        let step_h = window_h - overlap;
+
+        for (axis, window, step, sheet) in [
+            ("width", window_w, step_w, sheet_w),
+            ("height", window_h, step_h, sheet_h),
+        ] {
+            if step <= 0.0 {
+                return Err(MedpdfError::new(format!(
+                    "--tile: overlap={overlap:.1}pt is not smaller than the printable {axis} \
+                     of a sheet ({window:.1}pt = {sheet:.0}pt paper - 2 x {margin:.1}pt margin), \
+                     so each tile would start no further along than the last. \
+                     Reduce the overlap or use larger paper."
+                )));
+            }
+        }
+
+        let min_overlap = (-2.0 * margin).max(0.0);
+        if overlap < min_overlap {
+            return Err(MedpdfError::new(format!(
+                "--tile: overlap={overlap:.1}pt leaves a {:.1}pt gap between tiles. \
+                 A negative margin ({margin:.1}pt) pushes content into the border the printer \
+                 cannot print, so the overlap must be at least {min_overlap:.1}pt \
+                 (2 x {:.1}pt) for the tiles to meet.",
+                min_overlap - overlap,
+                -margin
+            )));
+        }
+
+        let tiles = |src: f64, step: f64| -> u32 {
+            if src <= 0.0 {
+                return 1;
+            }
+            (((src - overlap) / step).ceil() as i64).max(1) as u32
+        };
+        let cols = tiles(src_w, step_w);
+        let rows = tiles(src_h, step_h);
+
+        // Surplus is what the grid covers beyond the artwork. `center` splits it so
+        // every sheet carries roughly the same amount; `start` leaves it all on the
+        // last sheet, which for a 25:1 banner means three full sheets and one nearly
+        // blank one.
+        let surplus =
+            |n: u32, step: f64, src: f64| -> f64 { (n as f64 * step + overlap - src).max(0.0) };
+        let (lead_w, lead_h) = match align {
+            TileAlign::Center => (
+                surplus(cols, step_w, src_w) / 2.0,
+                surplus(rows, step_h, src_h) / 2.0,
+            ),
+            TileAlign::Start => (0.0, 0.0),
+        };
+
+        Ok(Self {
+            cols,
+            rows,
+            window_w,
+            window_h,
+            step_w,
+            step_h,
+            lead_w,
+            lead_h,
+            src_w,
+            src_h,
+        })
+    }
+
+    fn sheets(&self) -> u32 {
+        self.cols * self.rows
+    }
+}
+
+/// Splits each selected page across as many sheets as it takes, with overlap.
+///
+/// The inverse of [`apply_nup`], and the reason `plan-0003` exists: Publisher's tiled
+/// banner printing has no replacement in the portfolio, and tiling is a print-time
+/// operation on a PDF rather than a property of the source format.
+pub fn apply_tile(
+    doc: &mut Document,
+    page_ids: &mut Vec<ObjectId>,
+    spec: &TileSpec,
+    selected: &[u32],
+) -> Result<TileReport, MedpdfError> {
+    // Measure each page as it will be PLACED. Rotation is 0 because `--tile` does not
+    // turn pages; if that ever changes, this call must pass the same rotation the
+    // placement uses, because a 90/270 turn TRANSPOSES the footprint and the grid is
+    // derived from it — the wrong measurement here yields the wrong SHEET COUNT, not
+    // merely misplaced content (bug-0018).
+    let scale = spec.scale as f64;
+    let sizes: Vec<(f64, f64)> = selected
+        .iter()
+        .map(|&n| {
+            let id = *page_ids
+                .get((n - 1) as usize)
+                .ok_or_else(|| MedpdfError::new(format!("Page {n} is not in the document")))?;
+            medpdf::placed_page_size(doc, id, 1.0, 0.0)
+                .map(|(w, h)| (w as f64 * scale, h as f64 * scale))
+                .ok_or_else(|| MedpdfError::new(format!("Could not measure page {n}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Decide the sheet orientation once, for all pages. `auto` picks whichever yields
+    // fewer sheets, which is never the wrong answer for tiling and is exactly the
+    // choice that turns the WACDA banner from seven sheets into four.
+    let (sheet_w, sheet_h) = resolve_tile_orientation(spec, &sizes)?;
+
+    let plans: Vec<TilePlan> = sizes
+        .iter()
+        .map(|&(w, h)| {
+            TilePlan::compute(
+                w,
+                h,
+                sheet_w,
+                sheet_h,
+                spec.overlap as f64,
+                spec.margin as f64,
+                spec.align,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let total: u32 = plans.iter().map(TilePlan::sheets).sum();
+    if total > spec.max_sheets {
+        return Err(MedpdfError::new(format!(
+            "--tile: this would emit {total} sheets, above the max_sheets={} ceiling. \
+             Check the units and scale — a source measured in points against an overlap in \
+             inches multiplies the sheet count. Raise max_sheets if you meant it.",
+            spec.max_sheets
+        )));
+    }
+
+    for (i, plan) in plans.iter().enumerate() {
+        eprintln!(
+            "Page {}: {}x{} sheets of {:.0}x{:.0}pt ({:.1}pt overlap)",
+            selected[i], plan.cols, plan.rows, sheet_w, sheet_h, spec.overlap
+        );
+    }
+    eprintln!("Total {total} sheet(s)");
+
+    let mut sheets = Vec::new();
+    let mut marks: Vec<TileMark> = Vec::new();
+    for (idx, plan) in plans.iter().enumerate() {
+        let source_page = selected[idx];
+        let cells: Vec<(u32, u32)> = match spec.order {
+            TileOrder::Row => (0..plan.rows)
+                .flat_map(|r| (0..plan.cols).map(move |c| (r, c)))
+                .collect(),
+            TileOrder::Col => (0..plan.cols)
+                .flat_map(|c| (0..plan.rows).map(move |r| (r, c)))
+                .collect(),
+        };
+        for (row, col) in cells {
+            // Place the whole page so that the source point at this tile's origin
+            // lands at the sheet's printable corner. `place_page` anchors the visible
+            // box at (x, y) since medpdf 0.13.0, so no origin or rotation term is
+            // needed here — that is what the contract fix bought.
+            let src_x = col as f64 * plan.step_w - plan.lead_w;
+            let src_top = row as f64 * plan.step_h - plan.lead_h;
+            let x = spec.margin as f64 - src_x;
+            let y = spec.margin as f64 - (plan.src_h - src_top - plan.window_h);
+            marks.push(TileMark {
+                sheet_index: sheets.len(),
+                source_page,
+                row: row + 1,
+                col: col + 1,
+                cols: plan.cols,
+                rows: plan.rows,
+            });
+            sheets.push(SheetLayout {
+                placements: vec![PagePlacement {
+                    source_page,
+                    x,
+                    y,
+                    scale,
+                    rotation: 0.0,
+                }],
+            });
+        }
+    }
+
+    impose_pages(doc, page_ids, &sheets, sheet_w as f32, sheet_h as f32)?;
+
+    if spec.marks.labels || spec.marks.crop {
+        draw_tile_marks(doc, page_ids, spec, &marks, sheet_w, sheet_h)?;
+    }
+
+    Ok(TileReport {
+        sheets: total,
+        sheet_w,
+        sheet_h,
+        grids: plans.iter().map(|p| (p.cols, p.rows)).collect(),
+    })
+}
+
+/// Where one sheet sits in its page's grid, for assembly marks.
+struct TileMark {
+    sheet_index: usize,
+    source_page: u32,
+    row: u32,
+    col: u32,
+    cols: u32,
+    rows: u32,
+}
+
+/// Draws assembly marks on the finished sheets.
+///
+/// Taping twelve sheets together in the right order is the real failure point of
+/// tiled printing, and it happens after printing, when the source is no longer on
+/// screen. A caption naming the sheet turns a jigsaw into a procedure, which is the
+/// difference between the feature being used and being abandoned (plan-0003,
+/// decision 3).
+///
+/// The caption names the **source page** as well as the cell, because `pages=all`
+/// over a multi-page source interleaves several grids into one file and `R2C3` alone
+/// would be ambiguous.
+fn draw_tile_marks(
+    doc: &mut Document,
+    page_ids: &[ObjectId],
+    spec: &TileSpec,
+    marks: &[TileMark],
+    sheet_w: f64,
+    sheet_h: f64,
+) -> Result<(), MedpdfError> {
+    let margin = spec.margin as f64;
+    let overlap = spec.overlap as f64;
+    let grey = PdfColor::rgb(0.45, 0.45, 0.45);
+    // A local cache: the label font is a built-in, so nothing is ever embedded and
+    // sharing main's cache would buy nothing.
+    let mut font_cache = medpdf::EmbeddedFontCache::new();
+
+    for mark in marks {
+        let page_id = page_ids[mark.sheet_index];
+
+        if spec.marks.crop {
+            // The tile boundary is the inner edge of the overlap band: the line to cut
+            // along if butting the sheets rather than lapping them.
+            let (x0, y0) = (margin, margin);
+            let (x1, y1) = (sheet_w - margin - overlap, sheet_h - margin - overlap);
+            for (ax, ay, bx, by) in [
+                (x0, y1, x1, y1), // top of the trim box
+                (x1, y0, x1, y1), // right
+            ] {
+                medpdf::add_line(
+                    doc,
+                    page_id,
+                    &DrawLineParams::new(ax as f32, ay as f32, bx as f32, by as f32)
+                        .line_width(0.5)
+                        .color(grey),
+                )?;
+            }
+        }
+
+        if spec.marks.labels {
+            // Sit the caption inside the overlap band at the sheet's own outer corner,
+            // so the neighbouring sheet covers it once the seam is lapped.
+            let text = format!(
+                "p{} R{}C{} of {}x{}",
+                mark.source_page, mark.row, mark.col, mark.cols, mark.rows
+            );
+            let x = sheet_w - margin - overlap + 6.0;
+            let y = margin + 6.0;
+            medpdf::add_text_params(
+                doc,
+                page_id,
+                // Built-in Helvetica needs no font cache, and the caption is ASCII by
+                // construction, so the WinAnsi path cannot hit the unrepresentable-text
+                // error that non-Latin watermark text can.
+                &medpdf::AddTextParams::new(
+                    &text,
+                    medpdf::FontData::BuiltIn("Helvetica".to_string()),
+                    "TileLabel",
+                )
+                .font_size(8.0)
+                .position(x as f32, y as f32)
+                .color(grey),
+                &mut font_cache,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// What `--tile` computed, for `--json` and `--dry-run`.
+///
+/// The grid is derived information the caller never stated, and a wrong sheet count is
+/// this feature's characteristic failure, so it is reported rather than inferred from
+/// the output.
+pub struct TileReport {
+    pub sheets: u32,
+    pub sheet_w: f64,
+    pub sheet_h: f64,
+    pub grids: Vec<(u32, u32)>,
+}
+
+fn resolve_tile_orientation(
+    spec: &TileSpec,
+    sizes: &[(f64, f64)],
+) -> Result<(f64, f64), MedpdfError> {
+    let (pw, ph) = (spec.paper_width as f64, spec.paper_height as f64);
+    let (long, short) = if pw >= ph { (pw, ph) } else { (ph, pw) };
+    match spec.orientation {
+        Orientation::Portrait => Ok((short, long)),
+        Orientation::Landscape => Ok((long, short)),
+        Orientation::Auto => {
+            let count = |w: f64, h: f64| -> u32 {
+                sizes
+                    .iter()
+                    .map(|&(sw, sh)| {
+                        TilePlan::compute(
+                            sw,
+                            sh,
+                            w,
+                            h,
+                            spec.overlap as f64,
+                            spec.margin as f64,
+                            spec.align,
+                        )
+                        .map(|p| p.sheets())
+                        .unwrap_or(u32::MAX)
+                    })
+                    .fold(0u32, |a, b| a.saturating_add(b))
+            };
+            let portrait = count(short, long);
+            let landscape = count(long, short);
+            if portrait == u32::MAX && landscape == u32::MAX {
+                // Both orientations are degenerate; recompute one so the caller gets
+                // the real arithmetic rather than a bare "no orientation works".
+                TilePlan::compute(
+                    sizes.first().map(|s| s.0).unwrap_or(0.0),
+                    sizes.first().map(|s| s.1).unwrap_or(0.0),
+                    short,
+                    long,
+                    spec.overlap as f64,
+                    spec.margin as f64,
+                    spec.align,
+                )?;
+            }
+            Ok(if landscape < portrait {
+                (long, short)
+            } else {
+                (short, long)
+            })
+        }
+    }
+}
+
 pub fn apply_booklet(
     doc: &mut Document,
     page_ids: &mut Vec<ObjectId>,
