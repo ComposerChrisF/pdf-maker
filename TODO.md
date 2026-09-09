@@ -49,9 +49,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Eleven** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
-bug-0006, bug-0007, bug-0008, bug-0009 and bug-0016 (all fixed 2026-09-09 and deleted per the
-bug-reports lifecycle).  (bug-0016 was filed
+**Ten** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0005,
+bug-0006, bug-0007, bug-0008, bug-0009, bug-0016 and bug-0018 (all fixed 2026-09-09 and deleted
+per the bug-reports lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -98,14 +98,18 @@ with them.  All are on the imposition path; none is waiting on a ruling.
   for both branches.  Pinned by `cli_booklet_back_pages_land_on_the_sheet`, which asserts on the
   destination rectangle — **the `cm` scale coefficients are unchanged by this fault**, so the
   obvious sign-of-scale assertion passes broken _and_ fixed.  Verified failing on revert.
-- [ ] **bug-0018** — imposition sizes cells from the pre-rotation MediaBox, so a `/Rotate 90`
-  source is placed upright but mis-scaled and mis-centred.  **New `--tile` prerequisite**, and
-  the last one: `--tile` derives its grid from effective dimensions, so an unhonored
-  transposition gives the wrong _number of sheets_.  Fix by switching `apply_nup` /
-  `apply_booklet` to `get_page_effective_size`, confirming with `placed_page_size` wherever a
-  placement rotation is also in play.  **Status is code-trace, not reproduced** — build the
-  `/Rotate 90` fixture first (the report says how).
-- [ ] **plan-0003 implementation** once bug-0005, bug-0006, bug-0009 and bug-0018 land.  Land it **before**
+- [x] **bug-0018 — DONE 2026-09-09.**  Both sites now measure the page as placed:
+  imposition via `medpdf::placed_page_size(doc, page, 1.0, rotation)` and `--pad-to` via
+  `get_page_effective_size`.  Pinned by two CLI tests built on a real `/Rotate 90` fixture
+  (`medpdf::set_page_rotation` makes one in four lines), each verified to fail when its own
+  site is reverted — the imposition one reporting the exact `396x306 in a 306x396 cell`
+  overflow the report measured.  The rotation argument is 0 there deliberately, and the
+  comment says why: N-up never rotates and booklet’s 180° preserves the footprint, but a 90°
+  placement rotation **transposes** it, so `--tile` must re-measure with its own rotation
+  rather than reuse that call.
+
+- [ ] **plan-0003 implementation — all four prerequisites have landed** (bug-0005, bug-0006,
+  bug-0009, bug-0018, plus the medpdf 0.13.0/0.14.0 adoptions).  `--tile` is unblocked.  Land it **before**
   bug-0012, so the doc sweep documents all three imposition modes once instead of twice.
 
 **bug-0008 is _not_ a prerequisite**, contrary to plan-0003’s first draft.  It concerns

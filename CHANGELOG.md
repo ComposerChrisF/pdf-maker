@@ -5,6 +5,21 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.19.0] — 2026-09-09
+### Fixed
+- **A source page carrying `/Rotate 90` or `/Rotate 270` is now scaled to the cell
+  it is actually placed in** (bug-0018).  `get_page_media_box` is the _pre-rotation_
+  box, while `place_page` honors `/Rotate` — so imposition sized each cell from
+  portrait extents and then placed a landscape footprint.  Measured on a 612×792
+  sheet with 306×396 cells: every placement came out 396pt wide in a 306pt cell, so
+  the left column overlapped its neighbour and the right column ran 90pt off the
+  paper, at exit 0.  Imposition now measures with `medpdf::placed_page_size`,
+  computed from the same transform `place_page` emits, so the geometry planned
+  against and the geometry that lands cannot drift.
+- **`--pad-to` sizes its blank pages by the last page as _displayed_** (bug-0018,
+  second site).  A `/Rotate 90` last page previously got portrait pad pages appended
+  behind a page that displays landscape.
+
 ## [0.18.0] — 2026-09-09
 ### Fixed
 - **Oversized margins and gutters no longer produce mirrored, shrunken pages at

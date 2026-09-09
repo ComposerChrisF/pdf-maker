@@ -1172,3 +1172,114 @@ fn cli_json_reports_imposition_geometry() {
         "an inset layout must report zero overhang: {json2}"
     );
 }
+
+/// Write a copy of `src` with `/Rotate 90` stamped on every page.
+///
+/// pdf-maker cannot produce a rotated PDF itself, which is why bug-0018 sat as a
+/// code trace until `medpdf::set_page_rotation` turned the fixture into four lines.
+fn rotate_all_pages(src: &Path, dest: &Path, degrees: u32) {
+    let mut doc = Document::load(src).expect("source must load");
+    let ids: Vec<_> = doc.get_pages().values().copied().collect();
+    for id in ids {
+        medpdf::set_page_rotation(&mut doc, id, degrees).expect("set rotation");
+    }
+    doc.save(dest).expect("save rotated copy");
+}
+
+/// A `/Rotate 90` source must be scaled to the cell it is PLACED in, not to its
+/// pre-rotation MediaBox.
+///
+/// Regression test for bug-0018. `place_page` honors `/Rotate` (medpdf 0.13.0), so
+/// the placed footprint of a rotated portrait page is landscape — but imposition
+/// used to compute `scale` from the raw MediaBox extents, which are still portrait.
+/// Measured before the fix, on a 612x792 sheet with 306x396 cells: every placement
+/// came out 396 wide in a 306-wide cell, so the left column overlapped its
+/// neighbour and the right column ran 90pt off the paper, at exit 0.
+///
+/// The assertion is containment, not a magic number: each placement must fit inside
+/// the cell it was assigned and stay on the sheet. That survives a change of paper
+/// or grid, where a hardcoded rect would not.
+#[test]
+fn cli_rotated_source_is_scaled_to_its_placed_footprint() {
+    let upright = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(upright.path(), 4);
+    let rotated = tempfile::NamedTempFile::new().unwrap();
+    rotate_all_pages(upright.path(), rotated.path(), 90);
+
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            rotated.path().to_str().unwrap(),
+            "all",
+            "--nup",
+            "cols=2,rows=2,paper=letter,orientation=portrait",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let rects = placement_rects(output.path(), 1);
+    assert_eq!(rects.len(), 4, "2x2 grid should carry four placements");
+
+    // Letter portrait, no margin or gutter: cells are 306 x 396.
+    const SHEET_W: f64 = 612.0;
+    const SHEET_H: f64 = 792.0;
+    const CELL_W: f64 = 306.0;
+    const CELL_H: f64 = 396.0;
+    const EPS: f64 = 0.5;
+
+    for (x, y, w, h) in rects {
+        assert!(
+            w <= CELL_W + EPS && h <= CELL_H + EPS,
+            "placement {w}x{h} overflows its {CELL_W}x{CELL_H} cell (bug-0018)"
+        );
+        assert!(
+            x >= -EPS && y >= -EPS && x + w <= SHEET_W + EPS && y + h <= SHEET_H + EPS,
+            "placement ({x}, {y}, {w}, {h}) falls outside the {SHEET_W}x{SHEET_H} sheet"
+        );
+        // The rotated page is landscape, so it fits the cell's width and leaves
+        // height spare — the opposite of what the unrotated source would do.
+        assert!(
+            w > h,
+            "a /Rotate 90 portrait page should be placed landscape"
+        );
+    }
+}
+
+/// `--pad-to` must size its blank pages by the last page as DISPLAYED.
+///
+/// Second site of bug-0018: a `/Rotate 90` last page used to get portrait pad pages
+/// appended behind a page that displays landscape.
+#[test]
+fn cli_pad_pages_match_a_rotated_last_page() {
+    let upright = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(upright.path(), 1);
+    let rotated = tempfile::NamedTempFile::new().unwrap();
+    rotate_all_pages(upright.path(), rotated.path(), 90);
+
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            rotated.path().to_str().unwrap(),
+            "all",
+            "--pad-to",
+            "2",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let doc = Document::load(output.path()).unwrap();
+    let pages = doc.get_pages();
+    assert_eq!(pages.len(), 2);
+    let pad_id = *pages.get(&2).unwrap();
+    let (pad_w, pad_h) = medpdf::get_page_effective_size(&doc, pad_id).unwrap();
+    assert!(
+        pad_w > pad_h,
+        "pad page {pad_w}x{pad_h} should be landscape to match the rotated last page"
+    );
+}

@@ -128,16 +128,36 @@ pub fn apply_nup(
         );
     }
 
-    // Collect source MediaBoxes before we reinitialize the document
-    let media_boxes: Vec<[f64; 4]> = page_ids
+    // Measure each source page as it will actually be PLACED, not by its raw
+    // MediaBox extents.
+    //
+    // `get_page_media_box` is the PRE-rotation box (medpdf 0.13.0 documents it so),
+    // while `place_page` honors the source `/Rotate`. Sizing a cell from the raw box
+    // therefore transposes the footprint for a `/Rotate 90` source: the page is
+    // placed upright but scaled against the wrong pair of numbers, so it overflows
+    // its cell and can run off the sheet entirely (bug-0018 — measured 396pt of
+    // content in a 306pt cell, 90pt of it lost past the paper edge).
+    //
+    // `placed_page_size` is computed from the same transform `place_page` emits, so
+    // the geometry planned against and the geometry that lands cannot drift. It is
+    // measured here at scale 1 because the footprint is exactly linear in scale
+    // (`placed_page_size(d, p, s, r) == s * placed_page_size(d, p, 1.0, r)`), which
+    // makes a fit-to-cell one division rather than an iteration.
+    //
+    // Rotation is 0 here deliberately: N-up never rotates a placement, and the
+    // booklet back side rotates by 180, which preserves the footprint. A 90 or 270
+    // placement rotation TRANSPOSES it, so any future mode that turns a page to fit
+    // (`--tile` onto portrait sheets, say) must re-measure with its own rotation
+    // rather than reuse this.
+    let placed_sizes: Vec<(f64, f64)> = page_ids
         .iter()
         .enumerate()
         .map(|(i, &id)| {
-            medpdf::get_page_media_box(doc, id)
-                .map(|mb| [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64])
+            medpdf::placed_page_size(doc, id, 1.0, 0.0)
+                .map(|(w, h)| (w as f64, h as f64))
                 .ok_or_else(|| {
                     MedpdfError::new(format!(
-                        "Could not read MediaBox for page {}; aborting N-up imposition",
+                        "Could not measure page {}; aborting N-up imposition",
                         i + 1
                     ))
                 })
@@ -170,9 +190,7 @@ pub fn apply_nup(
 
             let page_idx = expanded_pages[cell_idx as usize];
             let (row, col) = grid_position(i, spec.cols, spec.rows, spec.order);
-            let mb = media_boxes[page_idx as usize];
-            let src_w = mb[2] - mb[0];
-            let src_h = mb[3] - mb[1];
+            let (src_w, src_h) = placed_sizes[page_idx as usize];
 
             if src_w <= 0.0 || src_h <= 0.0 {
                 continue;
@@ -286,16 +304,36 @@ pub fn apply_booklet(
         half_w, paper_h, paper_w, paper_h
     );
 
-    // Collect source MediaBoxes
-    let media_boxes: Vec<[f64; 4]> = page_ids
+    // Measure each source page as it will actually be PLACED, not by its raw
+    // MediaBox extents.
+    //
+    // `get_page_media_box` is the PRE-rotation box (medpdf 0.13.0 documents it so),
+    // while `place_page` honors the source `/Rotate`. Sizing a cell from the raw box
+    // therefore transposes the footprint for a `/Rotate 90` source: the page is
+    // placed upright but scaled against the wrong pair of numbers, so it overflows
+    // its cell and can run off the sheet entirely (bug-0018 — measured 396pt of
+    // content in a 306pt cell, 90pt of it lost past the paper edge).
+    //
+    // `placed_page_size` is computed from the same transform `place_page` emits, so
+    // the geometry planned against and the geometry that lands cannot drift. It is
+    // measured here at scale 1 because the footprint is exactly linear in scale
+    // (`placed_page_size(d, p, s, r) == s * placed_page_size(d, p, 1.0, r)`), which
+    // makes a fit-to-cell one division rather than an iteration.
+    //
+    // Rotation is 0 here deliberately: booklet never rotates a placement, and the
+    // booklet back side rotates by 180, which preserves the footprint. A 90 or 270
+    // placement rotation TRANSPOSES it, so any future mode that turns a page to fit
+    // (`--tile` onto portrait sheets, say) must re-measure with its own rotation
+    // rather than reuse this.
+    let placed_sizes: Vec<(f64, f64)> = page_ids
         .iter()
         .enumerate()
         .map(|(i, &id)| {
-            medpdf::get_page_media_box(doc, id)
-                .map(|mb| [mb[0] as f64, mb[1] as f64, mb[2] as f64, mb[3] as f64])
+            medpdf::placed_page_size(doc, id, 1.0, 0.0)
+                .map(|(w, h)| (w as f64, h as f64))
                 .ok_or_else(|| {
                     MedpdfError::new(format!(
-                        "Could not read MediaBox for page {}; aborting booklet imposition",
+                        "Could not measure page {}; aborting booklet imposition",
                         i + 1
                     ))
                 })
@@ -326,9 +364,7 @@ pub fn apply_booklet(
                 continue;
             }
 
-            let mb = media_boxes[(page_num - 1) as usize];
-            let src_w = mb[2] - mb[0];
-            let src_h = mb[3] - mb[1];
+            let (src_w, src_h) = placed_sizes[(page_num - 1) as usize];
 
             if src_w <= 0.0 || src_h <= 0.0 {
                 continue;

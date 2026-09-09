@@ -571,11 +571,15 @@ fn apply_padding(
                 let last_page_id = *page_ids
                     .last()
                     .ok_or_else(|| MedpdfError::new("No pages in document to pad"))?;
-                let media_box = medpdf::get_page_media_box(doc, last_page_id).ok_or_else(|| {
-                    MedpdfError::new("Could not determine MediaBox for last page")
-                })?;
-                let width = media_box[2] - media_box[0];
-                let height = media_box[3] - media_box[1];
+                // Match the last page as DISPLAYED, not as stored. `get_page_media_box`
+                // is the pre-rotation box, so a last page carrying `/Rotate 90` would
+                // otherwise get portrait pad pages appended behind a landscape-looking
+                // page — visible in the output, unlike a coordinate that is merely 90
+                // degrees off (bug-0018, second site).
+                let (width, height) = medpdf::get_page_effective_size(doc, last_page_id)
+                    .ok_or_else(|| {
+                        MedpdfError::new("Could not determine page size for last page")
+                    })?;
 
                 for _ in 0..(pages_to_add - 1) {
                     let page_id = medpdf::create_blank_page(doc, width, height)?;
