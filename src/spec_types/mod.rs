@@ -9,8 +9,7 @@ pub mod misc;
 
 pub use drawing::{DrawImageSpec, DrawLineSpec, DrawRectSpec, WatermarkSpec};
 pub use layout::{
-    BookletSpec, DuplexFlip, GridOrder, NupSpec, Orientation, TileAlign, TileMarks, TileOrder,
-    TileSpec,
+    BookletSpec, DuplexFlip, GridOrder, NupSpec, Orientation, TileAlign, TileOrder, TileSpec,
 };
 
 // The spec-key lists are re-exported for the `--help` drift guards in

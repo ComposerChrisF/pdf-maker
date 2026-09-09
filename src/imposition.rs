@@ -283,8 +283,13 @@ pub fn apply_nup(
 struct TilePlan {
     cols: u32,
     rows: u32,
-    /// Source span each sheet reproduces, in points.
-    window_w: f64,
+    /// Source span each sheet reproduces vertically, in points.
+    ///
+    /// There is deliberately no `window_w` companion, and the asymmetry is correct
+    /// rather than an oversight: the horizontal placement anchors the window's LEFT
+    /// edge, which is the origin side, so only where the window starts matters.  The
+    /// vertical placement anchors the BOTTOM of a window measured from the top, so it
+    /// needs the height to convert between the two.
     window_h: f64,
     /// Distance between adjacent tile origins, in source points.
     step_w: f64,
@@ -292,7 +297,6 @@ struct TilePlan {
     /// Surplus coverage held back from the first tile, so the grid is centred.
     lead_w: f64,
     lead_h: f64,
-    src_w: f64,
     src_h: f64,
 }
 
@@ -376,13 +380,11 @@ impl TilePlan {
         Ok(Self {
             cols,
             rows,
-            window_w,
             window_h,
             step_w,
             step_h,
             lead_w,
             lead_h,
-            src_w,
             src_h,
         })
     }

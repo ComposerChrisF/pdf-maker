@@ -5,6 +5,13 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.21.1] — 2026-09-09
+### Changed
+- Build hygiene: removed the dead `window_w` and `src_w` fields from `TilePlan`
+  (with a doc comment on `window_h` explaining why there is no `window_w`
+  companion) and dropped the unused `TileMarks` re-export, clearing the two
+  warnings the v0.21.0 `--tile` commit shipped.  No behavior change.
+
 ## [0.21.0] — 2026-09-09
 ### Added
 - **`--tile`: split one large page across many sheets, with overlap for taping**
