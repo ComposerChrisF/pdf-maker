@@ -2,7 +2,7 @@
 
 **Severity:** Medium-High (silent wrong output: content overflows its cell or runs off the sheet, at exit 0) — but only for sources carrying `/Rotate` 90 or 270
 **Type:** Code bug (`src/imposition.rs`, both `apply_nup` and `apply_booklet`)
-**Status:** **Code trace, not yet reproduced.**  No `/Rotate 90` fixture exists in this repo and pdf-maker cannot produce one, so this is derived from the code plus medpdf 0.13.0’s documented contract, not from a run.  **Build the fixture before fixing.**
+**Status:** **REPRODUCED 2026-09-09** with measured numbers — see “Reproduction” below.  Filed as a code trace; upgraded the same day once the medpdf session pointed out that `medpdf::set_page_rotation` is public and builds the fixture in five lines.
 **Filed:** 2026-09-09, during the medpdf 0.13.0 adoption
 
 ## Description
@@ -48,15 +48,48 @@ medpdf::placed_page_size(doc, page_id, scale, rotation)        -> Option<(f32, f
 - Where a placement rotation is also in play (the `--booklet` back side, and `--tile` when it lands), confirm the footprint with **`placed_page_size(doc, page, scale, rotation)`**, which is computed from the same transform `place_page` emits, so the geometry planned against and the geometry that lands cannot drift.  Note a 90° or 270° _placement_ rotation transposes the footprint too — independent of `/Rotate`, and wrong at any point in this repo’s history.
 - Keep `get_page_media_box` only where the raw box is genuinely wanted (nothing in `imposition.rs` currently qualifies).
 
-## Reproduction to build first
+## Reproduction (verified 2026-09-09, pdf-maker v0.14.0, medpdf 0.13.2)
 
-There is no `/Rotate` fixture in this repo and `--blank-page` cannot make one.  Construct it in the test harness the way `create_test_pdf` builds its pages, adding `"Rotate" => 90` to the page dictionary; then:
+The fixture needs no external file: `medpdf::set_page_rotation` is public, so a `/Rotate 90`
+source is four lines in the test harness.
 
-1. `--nup "cols=2,rows=2"` over four such pages.
-2. Read the `re` rects from the output — `place_page` emits its clip rectangle as exactly `(x, y, placed_w, placed_h)`, so one operator pins the whole contract with no rendering (technique from the pdf-orchestrator session, 2026-09-09).
-3. Assert every rect lies inside its cell and is centred in it.  Pre-fix, expect a rect wider than its cell.
+```rust
+let mut doc = Document::load("bugs/bug-0001/input-4page.pdf").unwrap();
+for pid in doc.get_pages().values().copied().collect::<Vec<_>>() {
+    medpdf::set_page_rotation(&mut doc, pid, 90).unwrap();
+}
+doc.save(&src).unwrap();
+```
 
-Pin the same invariant for `apply_booklet`.
+Then `--nup "cols=2,rows=2,paper=letter"` over those four pages, and read the `re` rectangles
+`place_page` emits — each is exactly `(x, y, placed_w, placed_h)`.
+
+**Sheet 612×792, so each cell is 306 wide × 396 tall.  Measured placements:**
+
+```
+re: [  0, 396, 396, 306]
+re: [306, 396, 396, 306]
+re: [  0,   0, 396, 306]
+re: [306,   0, 396, 306]
+```
+
+Every placement is **396 wide in a 306-wide cell** — 90 pt of overflow, 29 % — and 306 tall in
+a 396-tall cell, under-filling the height by the same 90 pt.  Two consequences, both silent at
+exit 0:
+
+- **Content overlaps the neighbouring cell.**  The left column occupies x ∈ [0, 396] where its
+  cell ends at 306.
+- **Content runs off the paper.**  The right column occupies x ∈ [306, 702] on a 612-wide
+  sheet — 90 pt lost off the right edge, unrecoverable.
+
+The arithmetic confirms the mechanism exactly.  Source MediaBox is 612 × 792 pre-rotation, so
+`scale = min(306/612, 396/792) = 0.5`, and the _rotated_ footprint is `792 × 0.5` by
+`612 × 0.5` = **396 × 306** — precisely what was measured.  Sizing from the effective
+(post-rotation) 792 × 612 instead gives `scale = min(306/792, 396/612) = 0.386` and a
+306 × 236.5 footprint, which fits.
+
+That the failure is a wrong _number_ rather than a wrong _shape_ is why this needed a run: a
+trace establishes that two numbers disagree, not which one is wrong.
 
 ## Second site: `--pad-to` sizes its pad pages the same way
 
