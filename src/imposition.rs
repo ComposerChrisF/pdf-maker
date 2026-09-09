@@ -245,8 +245,18 @@ pub fn apply_booklet(
             let cy = (paper_h - src_h * scale) / 2.0;
 
             // Apply duplex flip for back pages.
-            // LongEdge: no rotation needed — long-edge duplex is the natural
-            // orientation for landscape booklets, so it behaves like None.
+            //
+            // The compensation counteracts the physical flip the duplexer
+            // performs, so it depends on the (sheet orientation, flip) PAIR and
+            // not on the flip alone. The axis that inverts content is the one
+            // parallel to the content's horizontal: the LONG edge of a landscape
+            // sheet, the SHORT edge of a portrait one.
+            //
+            // Confirmed by physical duplex print 2026-09-09 (bug-0001). The
+            // previous rule keyed on the flip alone and rotated for ShortEdge
+            // unconditionally, which is the portrait rule applied to the default
+            // landscape sheet — so BOTH settings printed their backs upside down,
+            // for opposite reasons. That is exactly what the test produced.
             //
             // The rotated back page takes the SAME (x, y) as an unrotated one:
             // since medpdf 0.13.0 (bug-0023/bug-0024) `place_page` anchors the
@@ -255,7 +265,14 @@ pub fn apply_booklet(
             // + src_h * scale` existed solely to undo the old contract's rotation
             // excursion; against 0.13.0 it double-compensates and throws the back
             // pages clean off the sheet (bug-0018).
-            let (x, y, rotation) = if is_back && spec.flip == DuplexFlip::ShortEdge {
+            let landscape = paper_w > paper_h;
+            let needs_180 = is_back
+                && match spec.flip {
+                    DuplexFlip::None => false,
+                    DuplexFlip::LongEdge => landscape,
+                    DuplexFlip::ShortEdge => !landscape,
+                };
+            let (x, y, rotation) = if needs_180 {
                 (cx, cy, 180.0)
             } else {
                 (cx, cy, 0.0)

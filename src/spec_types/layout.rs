@@ -65,14 +65,39 @@ fn parse_duplex_flip(v: &str) -> Result<DuplexFlip, String> {
     }
 }
 
+/// The values of `n` that have a canonical page-per-sheet layout.
+///
+/// `n` is restricted to these (bug-0008): the previous fallback rounded an
+/// arbitrary `n` up to a grid and then filled every cell, so `n=3` silently
+/// produced 4-up, `n=5` produced 6-up and `n=7` produced 9-up — the flag's
+/// stated meaning ("input pages per sheet") and its behavior disagreed with no
+/// warning. Anything outside this set is a usage error pointing the caller at
+/// `cols=`/`rows=`, which already expresses any grid exactly.
+pub(super) const CANONICAL_N: &[u32] = &[1, 2, 4, 6, 8, 9, 16];
+
+/// Maps a canonical `n` to its `(cols, rows)` grid.
+///
+/// `2 => (2, 1)` — two pages **side by side** on a landscape sheet, which is what
+/// every print dialog means by 2-up and what this tool's own `--booklet` already
+/// does. It was `(1, 2)` (stacked on a portrait sheet) until 2026-09-09, the one
+/// entry in this table that disagreed with the convention every other entry
+/// follows, and it cost 29% of linear scale on letter sources (0.5 vs 0.647).
+/// The stacked layout remains available explicitly as `cols=1,rows=2`.
+///
+/// Callers must validate against [`CANONICAL_N`] first; a non-canonical `n`
+/// reaching here is a bug, not a layout question.
 pub(super) fn auto_grid(n: u32) -> (u32, u32) {
     match n {
-        2 => (1, 2),
+        1 => (1, 1),
+        2 => (2, 1),
         4 => (2, 2),
         6 => (2, 3),
         8 => (2, 4),
         9 => (3, 3),
         16 => (4, 4),
+        // Unreachable via NupSpec::from_str, which rejects non-canonical n.
+        // Kept total rather than panicking: a wrong grid beats a crash, and the
+        // parse-level check is the real guard.
         _ => {
             let cols = (n as f64).sqrt().ceil() as u32;
             let rows = n.div_ceil(cols);
@@ -186,6 +211,18 @@ impl FromStr for NupSpec {
                 if n_val == 0 {
                     return Err("n must be greater than 0".to_string());
                 }
+                if !CANONICAL_N.contains(&n_val) {
+                    let list = CANONICAL_N
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(format!(
+                        "n={n_val} has no canonical {n_val}-up layout. Use one of: {list}; \
+                         or specify the grid exactly with cols= and rows= \
+                         (e.g. cols=3,rows=1 for three across)."
+                    ));
+                }
                 auto_grid(n_val)
             }
             (None, Some(c), Some(r)) => {
@@ -298,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_auto_grid_known_values() {
-        assert_eq!(auto_grid(2), (1, 2));
+        assert_eq!(auto_grid(2), (2, 1));
         assert_eq!(auto_grid(4), (2, 2));
         assert_eq!(auto_grid(6), (2, 3));
         assert_eq!(auto_grid(8), (2, 4));
@@ -361,9 +398,66 @@ mod tests {
 
     #[test]
     fn test_nup_spec_custom_paper() {
-        let spec = NupSpec::from_str("n=2,paper_w=11,paper_h=17,units=in").unwrap();
+        // Pin the orientation so this tests unit conversion ONLY. Without it,
+        // n=2's landscape auto-orientation swaps the axes and the test silently
+        // becomes a test of two things at once.
+        let spec =
+            NupSpec::from_str("n=2,paper_w=11,paper_h=17,units=in,orientation=portrait").unwrap();
         assert!((spec.paper_width - 792.0).abs() < f32::EPSILON);
         assert!((spec.paper_height - 1224.0).abs() < f32::EPSILON);
+    }
+
+    /// `n=2` means two pages SIDE BY SIDE on a landscape sheet — the print-dialog
+    /// convention, and what `--booklet` already does. Ruled 2026-09-09 (bug-0008).
+    #[test]
+    fn test_nup_n2_is_side_by_side_landscape() {
+        let spec = NupSpec::from_str("n=2").unwrap();
+        assert_eq!((spec.cols, spec.rows), (2, 1));
+        assert!(
+            (spec.paper_width - 792.0).abs() < f32::EPSILON,
+            "letter landscape"
+        );
+        assert!((spec.paper_height - 612.0).abs() < f32::EPSILON);
+    }
+
+    /// The documented escape hatch: the pre-2026-09-09 stacked-portrait layout is
+    /// still reachable, just spelled explicitly. If this breaks, `--help`'s advice
+    /// for anyone who wanted the old `n=2` is wrong.
+    #[test]
+    fn test_nup_stacked_portrait_still_available_explicitly() {
+        let spec = NupSpec::from_str("cols=1,rows=2").unwrap();
+        assert_eq!((spec.cols, spec.rows), (1, 2));
+        assert!(
+            (spec.paper_width - 612.0).abs() < f32::EPSILON,
+            "letter portrait"
+        );
+        assert!((spec.paper_height - 792.0).abs() < f32::EPSILON);
+    }
+
+    /// A non-canonical `n` is a usage error naming the accepted set and the way to
+    /// get any other grid — it must never silently round up to a filled grid
+    /// (bug-0008: n=3 used to yield 4-up, n=5 6-up, n=7 9-up).
+    #[test]
+    fn test_nup_non_canonical_n_is_rejected() {
+        for n in [3u32, 5, 7, 10, 12] {
+            let err =
+                NupSpec::from_str(&format!("n={n}")).expect_err("non-canonical n must be rejected");
+            assert!(
+                err.contains(&n.to_string()),
+                "error should name the bad n: {err}"
+            );
+            assert!(
+                err.contains("cols="),
+                "error should point at cols=/rows=: {err}"
+            );
+        }
+        // ...and every canonical value still parses.
+        for n in CANONICAL_N {
+            assert!(
+                NupSpec::from_str(&format!("n={n}")).is_ok(),
+                "canonical n={n} must parse"
+            );
+        }
     }
 
     #[test]

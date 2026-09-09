@@ -1025,3 +1025,93 @@ fn cli_booklet_back_pages_land_on_the_sheet() {
         );
     }
 }
+
+/// Collect the uniform-scale coefficients (a, d) from each `cm` on a page.
+///
+/// A 180° placement shows up as a negative pair; an unrotated one as positive.
+fn placement_scales(path: &Path, page_number: u32) -> Vec<(f64, f64)> {
+    let doc = Document::load(path).expect("output must load");
+    let page_id = *doc.get_pages().get(&page_number).expect("page must exist");
+    doc.get_and_decode_page_content(page_id)
+        .expect("page content must decode")
+        .operations
+        .iter()
+        .filter(|op| op.operator == "cm" && op.operands.len() == 6)
+        .map(|op| {
+            let n = |i: usize| op.operands[i].as_float().unwrap_or_default() as f64;
+            (n(0), n(3))
+        })
+        .collect()
+}
+
+fn booklet_backs_rotated(paper: &str, flip: &str) -> bool {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--booklet",
+            &format!("{paper},flip={flip}"),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let backs = placement_scales(output.path(), 2);
+    assert!(!backs.is_empty(), "back sheet should carry placements");
+    let rotated = backs[0].0 < 0.0 && backs[0].1 < 0.0;
+    // The whole sheet must agree; a half-rotated sheet is nonsense.
+    for (a, d) in &backs {
+        assert_eq!(
+            (*a < 0.0 && *d < 0.0),
+            rotated,
+            "placements on one sheet disagree about rotation"
+        );
+    }
+    rotated
+}
+
+/// Duplex-flip compensation depends on the (sheet orientation, flip) PAIR, not on
+/// the flip alone — the axis that inverts content is the one parallel to the
+/// content's horizontal: the long edge of a landscape sheet, the short edge of a
+/// portrait one.
+///
+/// Regression test for bug-0001, confirmed by physical duplex print 2026-09-09:
+/// the previous rule rotated for `short_edge` unconditionally, which is the
+/// PORTRAIT rule applied to the default landscape sheet, so both settings printed
+/// their backs upside down for opposite reasons.
+///
+/// Note this asserts on the `cm` sign, the opposite of
+/// `cli_booklet_back_pages_land_on_the_sheet`, which asserts on the destination
+/// rectangle and would pass here either way. The two faults move different
+/// quantities: that one moved the translation and left the linear part alone,
+/// this one moves the linear part and leaves the rectangle alone. Neither test
+/// substitutes for the other.
+#[test]
+fn cli_booklet_duplex_flip_is_orientation_aware() {
+    // Default booklet paper is landscape (792x612).
+    assert!(
+        booklet_backs_rotated("paper=letter", "long_edge"),
+        "landscape + long_edge: the duplexer flips top-to-bottom, so backs need the 180"
+    );
+    assert!(
+        !booklet_backs_rotated("paper=letter", "short_edge"),
+        "landscape + short_edge: top stays top, so backs must NOT be rotated"
+    );
+
+    // A portrait sheet inverts the rule — the top-fold "flip-book" booklet.
+    assert!(
+        booklet_backs_rotated("paper_w=612,paper_h=792,units=pt", "short_edge"),
+        "portrait + short_edge: needs the 180"
+    );
+    assert!(
+        !booklet_backs_rotated("paper_w=612,paper_h=792,units=pt", "long_edge"),
+        "portrait + long_edge: must NOT be rotated"
+    );
+
+    // `flip=none` never compensates, whatever the paper.
+    assert!(!booklet_backs_rotated("paper=letter", "none"));
+}

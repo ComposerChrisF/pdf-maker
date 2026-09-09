@@ -49,9 +49,8 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Sixteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0007 and
-bug-0016 (both fixed 2026-09-09, by medpdf 0.13.0 and 0.14.0 respectively, and deleted per the
-bug-reports lifecycle).  (bug-0016 was filed
+**Fourteen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0001, bug-0007,
+bug-0008 and bug-0016 (all fixed 2026-09-09 and deleted per the bug-reports lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -118,15 +117,11 @@ rulings themselves are settled and no longer block anything.
 - [x] **bug-0003** — **honor duplicates.**  `"1,1"` yields two copies of page 1.  Needs a medpdf
   API change: duplicates are invisible to pdf-maker today because `parse_page_spec` collapses
   them before pdf-maker ever sees the list.  Handed to the medpdf session — see Phase C.
-- [x] **bug-0008** — **restrict `n` to the canonical values.**  `1, 2, 4, 6, 8, 9, 16`; anything
-  else errors and points the caller at `cols=`/`rows=`.  **Second half, `auto_grid(2)`:
-  recommendation is to change it to side-by-side landscape** — see the analysis recorded in
-  bug-0008 under “The `n=2` question, answered”.  In short: `n=2` is the _only_ entry in
-  `auto_grid`’s table that disagrees with print-dialog convention (4, 6, 8, 9 and 16 are all
-  already canonical), it disagrees with pdf-maker’s own `--booklet`, which puts two pages
-  side by side on a landscape sheet, and it costs 29 % of linear scale (measured: 0.5 vs
-  0.647 on letter).  One-line change, `2 => (2, 1)`; two unit tests pin the old value.
-  **Chris to confirm the change, since it alters existing output.**
+- [x] **bug-0008 — RULED _and_ SHIPPED.**  `n` restricted to `1, 2, 4, 6, 8, 9, 16`; anything
+  else is a usage error naming the set and pointing at `cols=`/`rows=`.  `auto_grid(2)` changed
+  to side-by-side landscape, approved 2026-09-09 on condition an override exists — it does, and
+  needs no new syntax: **`cols=1,rows=2` reproduces the old `n=2` byte for byte**, verified and
+  pinned by `test_nup_stacked_portrait_still_available_explicitly`.  Report deleted.
 - [x] **bug-0002** — **convert `width` like the coordinates.**  `--draw-line` `width` respects
   `units=`.  Behavior change; note in CHANGELOG.
 - [x] **bug-0009 item 4** — **`max_dpi=none` is the public spelling** for “no downsampling”,
@@ -138,13 +133,16 @@ rulings themselves are settled and no longer block anything.
   delivered plan-0002 Tier 1 the same day, and pdf-maker needed no change beyond the floor.
   Verified on both text paths and the report is deleted.  One residue moved to bug-0012: `\n`
   and `\t` must not be documented as one feature, because only `\n` renders.
-- [ ] **bug-0001** — **needs Chris at a printer.**  Verification kit generated 2026-09-09 in
-  `bugs/bug-0001/`; read `bugs/bug-0001/HOW-TO-VERIFY.md` first.  Print
-  `booklet-SHORT-edge.pdf` with the printer set to **Short-Edge** binding and
-  `booklet-LONG-edge.pdf` with **Long-Edge** binding, then answer one question per sheet: is
-  the back right-side up?  The analysis predicts **both come out upside down** — the two
-  settings are wrong for opposite reasons, so the test needs no judgement about which file is
-  which.  Record the outcome, the printer model, and the driver’s exact wording in the report.
+- [x] **bug-0001 — CONFIRMED AT THE PRINTER _and_ FIXED.**  Chris printed both files
+  2026-09-09: pages 2–3 upside down on **both**, which is precisely the symmetric failure the
+  analysis predicted and the strongest possible confirmation — the two settings were wrong for
+  opposite reasons.  Compensation is now keyed on the (sheet orientation, flip) pair:
+  `long_edge` rotates on landscape, `short_edge` on portrait, `none` never.  Report and fixture
+  directory deleted.  The durable half — which `flip` value goes with which paper orientation —
+  graduated into bug-0012 as a table for `--help` and the README, since it outlives the bug.
+  **Optional loop-closer:** a confirmation pair is at
+  `<scratchpad>/duplex-confirm/CONFIRM-landscape-{LONG,SHORT}-edge.pdf` if you want to prove the
+  fix on paper rather than in a content stream.  Expect backs upright on both this time.
 
 ### Phase B — independent code fixes, in severity order (no ruling needed, off the `--tile` path)
 
@@ -177,14 +175,14 @@ Each fix lands with a test that fails when the fix is reverted.
 - [ ] **bug-0003** implementation — needs a medpdf API change (duplicates are invisible to
   pdf-maker today); coordinate with the sibling `../medpdf` workspace and its release flow
   (`PUBLISHING.md`).
-- [ ] **bug-0008** implementation — restrict `n` to `1, 2, 4, 6, 8, 9, 16`, plus the
-  `auto_grid(2)` change to side-by-side landscape **once Chris confirms**, since it alters
-  existing output.  Two unit tests pin the old value (`layout.rs:301`, `layout.rs:364`).
+- [x] **bug-0008 — done**, see Phase A.  Both tests that pinned the old value were updated;
+  `test_nup_spec_custom_paper` gained an explicit `orientation=portrait` so it tests unit
+  conversion only, instead of silently testing conversion and orientation at once.
 - [ ] **bug-0009 item 4** implementation — `max_dpi=none` as the public spelling, numeric
   values below 1.0 rejected, `test_draw_image_spec_max_dpi_zero` rewritten rather than deleted.
 - [x] **bug-0016 — done**, see Phase A.
 - [ ] **bug-0002** implementation (behavior change; note in CHANGELOG).
-- [ ] **bug-0001** implementation (only after physical confirmation).
+- [x] **bug-0001 — done**, see Phase A.
 
 ### Phase D — cross-repo
 

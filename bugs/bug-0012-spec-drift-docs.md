@@ -93,3 +93,25 @@ medpdf 0.14.0: a trailing newline yields a trailing **empty line** (`"a\n"` is t
 block height does not depend on invisible whitespace), and leading is not caller-settable —
 there is no wrap or truncation, those being medpdf’s Tiers 2-3, which pdf-maker is explicitly
 not requesting.
+
+## Additional item (added 2026-09-09): document which `flip` value goes with which paper orientation
+
+Graduated out of bug-0001 when it was fixed, because it outlives the bug: the rule is not
+obvious, it is the thing a user gets wrong, and nothing in the tool currently states it.
+
+`--booklet`’s `flip` key compensates for the physical turn the duplexer performs, so the right
+value depends on the **sheet orientation**, not on preference:
+
+| Sheet | Use | Why |
+|---|---|---|
+| **Landscape** (the default, 792×612) | `flip=long_edge` | The long edge is horizontal, so the duplexer sends top to bottom and the backs need the 180° |
+| **Portrait** (e.g. `paper_w=612,paper_h=792`) | `flip=short_edge` | The short edge is horizontal; same reasoning, other axis |
+| Single-sided output | `flip=none` | No compensation at all |
+
+State it in `--help` and in the README booklet section, as a table rather than prose — the
+failure mode is choosing the wrong one, and a table is checkable at a glance where a sentence
+is not.  Worth adding the diagnostic too: **if the backs print upside down, the other `flip`
+value is the fix**, which saves the reader deriving the geometry.
+
+Confirmed by physical duplex print 2026-09-09; the code was inverted until then (bug-0001), so
+any pre-v0.16.0 advice about `flip` found elsewhere is wrong.

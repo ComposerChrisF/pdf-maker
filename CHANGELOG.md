@@ -5,6 +5,35 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.16.0] — 2026-09-09
+### Fixed
+- **`--booklet` duplex-flip compensation was inverted on landscape sheets**
+  (bug-0001).  Confirmed by physical duplex print 2026-09-09: both `flip` values
+  printed their back sides upside down, for opposite reasons.  The compensation
+  counteracts the physical flip the duplexer performs, so it depends on the
+  (sheet orientation, flip) **pair**, not on the flip alone — the axis that
+  inverts content is the one parallel to the content’s horizontal, i.e. the long
+  edge of a landscape sheet and the short edge of a portrait one.  The old rule
+  rotated for `short_edge` unconditionally, which is the portrait rule applied to
+  the default landscape sheet.  Now `long_edge` rotates on landscape and
+  `short_edge` on portrait, and the custom-portrait “flip-book” case that the old
+  code got right by accident still works.
+
+### Changed
+- **`--nup n=` now accepts only the canonical values `1, 2, 4, 6, 8, 9, 16`**
+  (bug-0008).  A non-canonical `n` used to round up to a grid and fill every
+  cell, so `n=3` silently produced 4-up, `n=5` 6-up and `n=7` 9-up — the flag
+  said “input pages per sheet” and did something else.  It is now a usage error
+  naming the accepted set and pointing at `cols=`/`rows=`, which expresses any
+  grid exactly.
+- **`--nup n=2` is now two pages side by side on a landscape sheet**, the
+  print-dialog convention and what `--booklet` already did.  It was stacked on a
+  portrait sheet — the only entry in the grid table that disagreed with the
+  convention every other entry follows, costing 29 % of linear scale on letter
+  sources (0.5 vs 0.647).  **The old layout is still available explicitly as
+  `--nup "cols=1,rows=2"`**, which produces byte-identical output to the previous
+  `n=2`.
+
 ## [0.15.0] — 2026-09-09
 ### Fixed
 - **Multi-line watermark text now renders** (bug-0016).  `--watermark "text=Line
