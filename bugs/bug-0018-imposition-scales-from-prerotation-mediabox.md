@@ -112,11 +112,31 @@ The fix is the same one-word substitution: `get_page_effective_size`.
 
 Also code-trace, not reproduced, and it wants the same `/Rotate 90` fixture.
 
-**Not affected, checked in the same pass:** the `--watermark` / `--draw-rect` / `--draw-line` /
-`--draw-image` family takes absolute caller coordinates and never measures the page — with the
-exception of `h_align` and `v_align`, which resolve inside medpdf against whatever box medpdf
-consults.  That one is medpdf’s question, not this report’s, and it is the same shape as
-pdf-orchestrator’s bug-0050.
+**Not affected — and this is now settled, not assumed.**  The `--watermark` / `--draw-rect` /
+`--draw-line` / `--draw-image` family takes absolute caller coordinates and never measures the
+page.  The one part that looked like it might, `h_align` / `v_align`, does not either: the
+pdf-orchestrator session read it out of medpdf’s source (`pdf_watermark.rs:358-396`) on
+2026-09-09 — `h_align` offsets by the _text’s_ width, `v_align` by the text’s `ascent`,
+`descent`, `x_height`, `cap_height` or `bbox_bottom`.  Every input is a metric of the text, and
+no page box is consulted at any point.  The alignment keys mean “align this object **about
+that point**”, never “align it **within the page**”, so there is no `/Rotate` question on that
+axis at all.
+
+Recorded affirmatively so a later reader does not “fix” a path that is already correct, which
+is the likelier failure mode here than the reverse.
+
+**`--dry-run` is not a blind spot here, unlike the equivalent path in pdf-orchestrator.**
+Checked 2026-09-09 after that session found their dry-run cannot see their bug-0050, because it
+substitutes a `--page-size` figure instead of reading the page.  pdf-maker’s `--dry-run`
+branches only at the **save** (`src/main.rs:645`): merge, imposition, overlays, drawing and
+padding all run in full against the real document first.  So the geometry _is_ computed on a
+dry run, and this defect is reachable by one.
+
+What a dry run cannot do is _report_ it — the branch prints a page count and nothing about the
+derived geometry.  That gap is already scheduled from two directions and needs no new record:
+bug-0006’s ruling requires the computed cell size and any off-sheet overhang in `--json` and on
+stderr, and `plans/plan-0003` requires `--dry-run` to print the computed grid.  Landing either
+would have surfaced this report’s overflow without a physical print.
 
 ## Related
 
