@@ -23,6 +23,39 @@ Observed: the orphan count equals the sheet count (`out1`: object 5; `out2`: obj
 
 Rust test sketch: impose a 4-page doc onto 2 sheets, reload the output with lopdf, walk references from the trailer, and assert every non-ObjStm object is reachable (currently two `/Length 0` streams are not).
 
+## Correction, and what the investigation found (2026-09-09)
+
+**Retracted from this report:** a spurious `[ERROR lopdf::reader] stream dictionary of '2 0 R'
+is missing the Length entry`, logged on every imposition run, was briefly recorded here as “the
+same defect surfacing twice”.  It is not.  It is pdf-maker’s own XMP metadata stream, built
+with a struct literal that bypasses `Stream::new` and therefore never gains a `/Length`
+(`src/main.rs:208`), surfacing only because `impose_pages` round-trips through a raw `save_to`
+that skips the `compress()` which had been repairing it.  Filed separately as **bug-0017**.
+
+**What that investigation established about _this_ report**, which makes the remaining puzzle
+sharper rather than solved:
+
+- `create_blank_page` builds its content stream with `Stream::new(dictionary! {}, vec![])`
+  (`medpdf/src/pdf_blank_page.rs:13`), so the empty stream is well-formed — `/Length 0` — and
+  reloads cleanly.  The orphaning is not a malformed-object problem.
+- `place_page` appears to **preserve** the destination’s existing `/Contents` rather than
+  replace it: it resolves the current contents to a ref array, passes them through
+  `isolate_dest_content_streams` (which _wraps_ with standalone `q`/`Q` streams and re-emits the
+  originals untouched, `pdf_overlay_helpers.rs:366-400`), then appends the placed content and
+  writes the array back (`pdf_place_page.rs:325-357`).  On that reading the blank page’s empty
+  stream should stay referenced.
+
+So the “`place_page` rewrites `/Contents` and orphans the original” mechanism this report
+proposed is **not** confirmed, and the surface reading of the code contradicts it — while the
+observed orphan count still equals the sheet count exactly.  Something between
+`resolve_contents_to_ref_array` and the final array is dropping the reference.  Handed to the
+medpdf session as **medpdf bug-0039**, since both primitives are theirs; this report stays open
+as the pdf-maker-side observation until that lands.
+
+**Why it is worth more than its severity suggests:** plan-0003’s `--tile` multiplies the leak
+by the sheet count — a twelve-sheet banner leaks twelve objects — so the mode that makes this
+bug matter is the next one to be built.
+
 ## Suggested fix
 
 First confirm the mechanism (dump the imposed output’s page `/Contents` arrays and check the orphaned IDs are the `create_blank_page` originals).  Then pick the cheapest correct layer:

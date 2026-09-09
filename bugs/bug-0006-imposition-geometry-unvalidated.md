@@ -15,7 +15,19 @@ scale   = min(cell_w/src_w, cell_h/src_h)
 
 with no check that the available area is positive.  A margin or gutter large enough to consume the paper yields negative cell dimensions, hence a **negative scale**, which `place_page` accepts (it only requires the scale to be finite).  The result is content drawn mirrored through the origin at a tiny size — silent garbage, exit 0.  The same shape exists in `apply_booklet`: `half_w = (paper_w − binding_margin) / 2` goes non-positive when `binding_margin ≥ paper_w`.
 
-Negative `margin=`, `gutter=`, and `binding_margin=` values are also accepted at parse (any `f32` parses), which produces content placed off-paper; bug-0009 carries the parse-level range validation, this report carries the derived-geometry check.
+Negative `margin=`, `gutter=`, and `binding_margin=` values are also accepted at parse (any
+`f32` parses).  **Ruled 2026-09-09: that acceptance is correct and stays** — a negative margin
+is a _bleed_ (verified: `--nup "n=4,margin=-0.25,units=in"` gives `0.5227 0 0 0.5227 -15.95
+396 cm`, a positive scale with origins off the sheet, each cell clipped to its own rect), and
+it can never produce the fault this report describes, because a negative margin only makes the
+cell _larger_.  The full ruling and its “an extent may not be negative; an offset may”
+principle are recorded in bug-0009.
+
+The ruling adds one obligation to this report’s fix: since a negative offset is a supported
+layout rather than an accident, **the derived geometry must be reported, not just checked** —
+emit the computed cell size, and how much of it falls outside the sheet, in `--json` and in the
+stderr progress block.  Otherwise a typo’d `margin=-0.5` bleeds most of the artwork off the
+paper at exit 0, which is the same silent-wrong-output shape this report exists to close.
 
 ## Reproduction (verified 2026-07-16, v0.13.1)
 
