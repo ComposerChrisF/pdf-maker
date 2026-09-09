@@ -33,3 +33,20 @@ The invariant is “what the caller named is what they get, or a loud error”. 
 ## History
 
 `425b9f6` (v0.13.0) fixed the out-of-range half of this class and wrote the “never silently drop” contract into README, CLAUDE.md, and `--help`.  The duplicate half was never mentioned — the contract was written as if dedup did not exist, and no test covers duplicates.
+
+## RULING 2026-09-09 — honor duplicates
+
+Chris’s call: **honor them.**  `"1,1"` yields two copies of page 1; a page spec is a list of
+pages to emit, not a set to select.  Repetition is a useful feature — the obvious case being
+a page duplicated for a facing-page layout or a repeated insert — and refusing it would spend
+an error on something with a clear meaning.
+
+**This needs a medpdf change and cannot be done here alone.**  Duplicates are invisible to
+pdf-maker: `medpdf::parse_page_spec` collapses them before pdf-maker ever sees the list, so
+`page_spec::expand` has nothing to preserve.  The API must either stop collapsing or offer a
+duplicate-preserving variant, and that decision is medpdf’s to make — coordinate through the
+sibling workspace and its release flow (`PUBLISHING.md`).
+
+Note the interaction with `page_spec::expand`’s bounds check (the contract invariant in
+CLAUDE.md): honoring duplicates must not weaken it.  `"1,1,99"` on a two-page document is
+still exit 1 naming page 99 — repetition is legal, out-of-range is not.

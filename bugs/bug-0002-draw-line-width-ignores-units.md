@@ -34,3 +34,13 @@ Behavior-change note for the fixing agent: any existing caller passing `width=` 
 ## Why this fix addresses the bug
 
 The defect is an inconsistency between sibling keys of one spec (and between `--draw-line` and `--draw-rect`).  Converting `width` at the same point where the other keys are converted removes the inconsistency at its single source; the doc line closes the spec gap so the semantics cannot silently diverge again.
+
+## RULING 2026-09-09 — convert `width` like the coordinates
+
+Chris’s call: **convert it.**  `--draw-line "x1=1,y1=1,x2=7,y2=1,width=0.02,units=in"` gives a
+line 0.02 inches thick, not 0.02 points.  One `units=` key governs every length in the spec;
+a key that silently means something different from its neighbours is the defect.
+
+Behavior change — a script passing `width=` with a non-`pt` `units=` gets a different line
+weight.  Note it in the CHANGELOG, and state the rule in `--help`: `units=` applies to every
+distance in the spec, coordinates and widths alike.

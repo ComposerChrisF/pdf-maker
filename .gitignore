@@ -3,6 +3,10 @@ in*.pdf
 out*.pdf
 *.docx.pdf
 *test*.pdf
+# bugs/ fixtures are never gitignored (~/.claude/rules/bug-reports.md) — the
+# scratch-PDF patterns above would otherwise silently swallow files like
+# bugs/bug-0001/input-4page.pdf.
+!bugs/**
 .cargo/config.toml
 .claude/settings.local.json
 .publish-bin.toml

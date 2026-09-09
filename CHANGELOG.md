@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
 ## [Unreleased]
+### Fixed
+- **`--booklet flip=short_edge` placed every back page completely off the sheet.**
+  Introduced by adopting medpdf 0.13.0 and caught before release.  `apply_booklet`
+  passed `(cx + w, cy + h)` for the rotated back side, hand-compensating the
+  pre-0.13.0 contract in which a 180° placement landed at `[x-w, x] x [y-h, y]`.
+  medpdf 0.13.0 anchors the placed bounding box at `(x, y)` for any rotation, so
+  that arithmetic double-compensated and displaced each back page by exactly one
+  placed width and height — a blank back side at exit 0.  The rotated branch now
+  passes the same `(cx, cy)` as the unrotated one.  Pinned by
+  `cli_booklet_back_pages_land_on_the_sheet`, which asserts on the destination
+  rectangle: the `cm` scale coefficients are unchanged by this fault, so the
+  obvious “was the 180° applied?” assertion passes in both the broken and the
+  fixed state.
+- Imposition no longer leaks one orphaned zero-byte stream per output sheet
+  (bug-0007), fixed upstream in medpdf 0.13.0.
+
+### Changed
+- Adopt medpdf 0.13.0 and raise the requirement to `0.13`.  `place_page` now
+  places by **visible bounding box** — `(x, y, scale)` alone determines where a
+  page lands, for any MediaBox origin and any rotation — and honors the source
+  page’s `/Rotate` (medpdf bug-0023, bug-0024).  A build against an older 0.12.x
+  silently restores the previous placement, hence the floor.
+
+### Known issue
+- Imposition still sizes cells from the **pre-rotation** MediaBox, so a source
+  carrying `/Rotate 90` or `/Rotate 270` is now placed upright but mis-scaled and
+  mis-centred (bug-0018).  Unrotated sources — every fixture in this repo and the
+  overwhelmingly common case — are unaffected.
 
 ## [0.13.2] - 2026-07-24
 ### Changed

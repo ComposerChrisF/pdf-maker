@@ -13,7 +13,14 @@ cell_w  = avail_w / cols        (same for height)
 scale   = min(cell_w/src_w, cell_h/src_h)
 ```
 
-with no check that the available area is positive.  A margin or gutter large enough to consume the paper yields negative cell dimensions, hence a **negative scale**, which `place_page` accepts (it only requires the scale to be finite).  The result is content drawn mirrored through the origin at a tiny size — silent garbage, exit 0.  The same shape exists in `apply_booklet`: `half_w = (paper_w − binding_margin) / 2` goes non-positive when `binding_margin ≥ paper_w`.
+with no check that the available area is positive.  A margin or gutter large enough to consume the paper yields negative cell dimensions, hence a **negative scale**, which `place_page` accepts (it only requires the scale to be finite).  The result is content drawn mirrored at a tiny size — silent garbage, exit 0.
+
+**Symptom updated 2026-09-09 for medpdf 0.13.0.**  This report originally said “mirrored
+through the origin”, and that observation is now stale: `place_page` compensates a negative
+scale like any other transform, so the mirrored content lands _inside_ the intended slot
+rather than swinging through the placement point.  Still garbage, still exit 0, still exactly
+the fault described here — but anyone verifying against the old sentence will not see what it
+predicts.  The same shape exists in `apply_booklet`: `half_w = (paper_w − binding_margin) / 2` goes non-positive when `binding_margin ≥ paper_w`.
 
 Negative `margin=`, `gutter=`, and `binding_margin=` values are also accepted at parse (any
 `f32` parses).  **Ruled 2026-09-09: that acceptance is correct and stays** — a negative margin

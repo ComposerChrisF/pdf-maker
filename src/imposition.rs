@@ -247,8 +247,16 @@ pub fn apply_booklet(
             // Apply duplex flip for back pages.
             // LongEdge: no rotation needed — long-edge duplex is the natural
             // orientation for landscape booklets, so it behaves like None.
+            //
+            // The rotated back page takes the SAME (x, y) as an unrotated one:
+            // since medpdf 0.13.0 (bug-0023/bug-0024) `place_page` anchors the
+            // placed page's bounding box at (x, y) for any rotation, so the two
+            // branches differ only in the rotation. The former `+ src_w * scale,
+            // + src_h * scale` existed solely to undo the old contract's rotation
+            // excursion; against 0.13.0 it double-compensates and throws the back
+            // pages clean off the sheet (bug-0018).
             let (x, y, rotation) = if is_back && spec.flip == DuplexFlip::ShortEdge {
-                (cx + src_w * scale, cy + src_h * scale, 180.0)
+                (cx, cy, 180.0)
             } else {
                 (cx, cy, 0.0)
             };

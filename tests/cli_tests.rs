@@ -952,3 +952,76 @@ fn cli_booklet_default() {
     let page_count = pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH");
     assert_eq!(page_count, 2);
 }
+
+/// Collect the `re` (rectangle) operands from one page's content streams.
+///
+/// `place_page` emits its clip rectangle as exactly `(x, y, placed_w, placed_h)`,
+/// so this one operator pins the whole placement contract — where the page landed
+/// and how big it is — with no rendering and no fixtures.
+fn placement_rects(path: &Path, page_number: u32) -> Vec<(f64, f64, f64, f64)> {
+    let doc = Document::load(path).expect("output must load");
+    let page_id = *doc.get_pages().get(&page_number).expect("page must exist");
+    let content = doc
+        .get_and_decode_page_content(page_id)
+        .expect("page content must decode");
+    content
+        .operations
+        .iter()
+        .filter(|op| op.operator == "re")
+        .map(|op| {
+            let n = |i: usize| op.operands[i].as_float().unwrap_or_default() as f64;
+            (n(0), n(1), n(2), n(3))
+        })
+        .collect()
+}
+
+/// A rotated booklet back page must land on exactly the same rectangle as an
+/// unrotated front page — same slot, differing only in the 180° rotation.
+///
+/// Regression test for the medpdf 0.13.0 adoption. `apply_booklet` used to pass
+/// `(cx + w, cy + h)` for the rotated back side, hand-compensating the pre-0.13.0
+/// contract in which a 180° placement landed at `[x-w, x] x [y-h, y]`. Since
+/// medpdf 0.13.0 (its bug-0023/bug-0024) `place_page` anchors the placed bounding
+/// box at `(x, y)` for any rotation, so that arithmetic double-compensated and
+/// threw every back page a full page width and height off the sheet — a blank
+/// back side at exit 0.
+///
+/// Note what this asserts and why: the `cm` scale coefficients are UNCHANGED by
+/// that fault (only the translation moved), so an assertion on the sign of the
+/// scale — the obvious way to test "was the 180° applied?" — passes in both the
+/// broken and the fixed state. Assert on the destination rectangle instead.
+#[test]
+fn cli_booklet_back_pages_land_on_the_sheet() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--booklet",
+            "flip=short_edge",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let fronts = placement_rects(output.path(), 1);
+    let backs = placement_rects(output.path(), 2);
+    assert_eq!(fronts.len(), 2, "front sheet should carry two placements");
+    assert_eq!(backs.len(), 2, "back sheet should carry two placements");
+    assert_eq!(
+        fronts, backs,
+        "rotated back placements must occupy the same rectangles as the fronts"
+    );
+
+    // And they must actually be on the paper: default booklet sheet is 792x612.
+    for (x, y, w, h) in backs {
+        assert!(
+            x >= 0.0 && y >= 0.0 && x + w <= 792.5 && y + h <= 612.5,
+            "back placement ({x}, {y}, {w}, {h}) falls outside the 792x612 sheet"
+        );
+    }
+}

@@ -52,3 +52,37 @@ The compensation exists solely to counteract the physical flip the duplexer perf
 ## History
 
 Introduced in `56f7b01` (v0.10.0, “Add n-up and booklet imposition”), unchanged since.  No spec or feature-plan document accompanied the commit, so the intended flip semantics were never written down — this is also why bug-0012 (missing imposition documentation) matters here.
+
+## Verification kit — generated 2026-09-09, awaiting a physical print
+
+Chris asked for something printable.  Built with the v0.13.2 release binary against medpdf
+0.13.0, reproducing the **current, suspected-wrong** behavior:
+
+```
+/Users/chris/Chris/App/Rust/Pdf/pdf-maker/bugs/bug-0001/HOW-TO-VERIFY.md
+/Users/chris/Chris/App/Rust/Pdf/pdf-maker/bugs/bug-0001/input-4page.pdf
+/Users/chris/Chris/App/Rust/Pdf/pdf-maker/bugs/bug-0001/booklet-SHORT-edge.pdf
+/Users/chris/Chris/App/Rust/Pdf/pdf-maker/bugs/bug-0001/booklet-LONG-edge.pdf
+```
+
+Read `HOW-TO-VERIFY.md` first.  Print each booklet file with the printer’s binding setting
+matched to its name, then answer one question per sheet: **is the back right-side up?**
+
+The source pages carry a large numeral, `TOP — page N` near the top edge and a grey
+`bottom — page N` near the bottom, so an inverted back is unmistakable.  Sheet 1 holds source
+pages 4 and 1, sheet 2 holds 2 and 3 — standard saddle-stitch order, and not what is under
+test.
+
+**Confirmed on this build** (so the printed artifact matches the analysis): `flip=short_edge`
+emits `-0.64705884 0 0 -0.64705884` on the back sheet (180° applied) and `flip=long_edge`
+emits `0.64705884 0 0 0.64705884` (none), on landscape 792×612 sheets.
+
+**Prediction: both print with their backs upside down**, for opposite reasons — the test is
+symmetric, so it needs no judgement about which file is which.  Backs upright on both would
+mean the code is right and this report should be closed as not-a-bug with the reasoning
+corrected.  One upright and one inverted would mean the analysis is wrong in a third way, and
+_which one_ changes the fix — so record which.
+
+Please note the outcome, the printer model, and the driver’s exact wording for the setting.
+Duplex vocabulary is inconsistent enough between drivers that the wording is part of the
+evidence.

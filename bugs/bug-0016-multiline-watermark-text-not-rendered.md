@@ -62,3 +62,19 @@ If medpdf Tier 1 lands, close this by verifying the escape renders multiple line
 pdf-maker must ship first, at minimum update `--help` to state that `\n`/`\t` in watermark
 text are not currently rendered as line breaks, so the documentation stops promising a
 feature that does nothing.
+
+## RULING 2026-09-09 — the fix is a medpdf feature
+
+Chris’s call: **medpdf owns it**, confirming this report’s own recommendation.  Line layout
+needs font metrics — leading, ascent, descent, block height — and those live in medpdf; a
+pdf-maker-side `\n`-split would re-derive them badly and drift.
+
+This unblocks medpdf `plan-0002-multiline-watermark-text.md`, whose **Tier 1** (`\n`-split,
+metrics-based leading, block-level vertical alignment) needs no API change and is exactly what
+makes pdf-maker’s already-documented escapes render.  Tiers 2–3 add `AddTextParams` fields,
+which break pdf-orchestrator’s exhaustive struct literal and want a coordinated bump — not
+required for this report.
+
+The medpdf session has been told the ruling.  This report stays open here until the feature
+ships and pdf-maker’s documented `\n` / `\t` escapes actually render; nothing changes in this
+repo in the meantime, since `unescape_text` already decodes them correctly.

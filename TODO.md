@@ -9,23 +9,20 @@ three are true prerequisites and one is not, contrary to the plan’s first draf
 _medpdf_ bugs sit under it**, on the `place_page` primitive imposition is built from.  All are
 gathered into **Phase 0** below and should be worked first.
 
-**The critical path runs through medpdf, not through this repo.**  Corrected 2026-09-09: an
-earlier reading of this queue named bug-0007 the longest lead item because its fix _might_
-belong in medpdf.  medpdf bug-0023 and bug-0024 certainly do, are already ruled, and are
-already sequenced in medpdf’s own `TODO.md` (Step 5) — so the schedule is set by a medpdf
-release, and bug-0007 rides along on it rather than driving it.
+**The medpdf half of the critical path has LANDED (2026-09-09).**  medpdf 0.13.0 (commit
+`6208ff4`) fixes their bug-0023, bug-0024 and bug-0039; this repo is on it, the floor is raised
+to `medpdf = "0.13"`, and all 41 tests pass.  What that adoption cost and uncovered:
 
-Two decisions have since been made and are recorded in the reports themselves, so nothing in
-Phase 0 is waiting on a ruling any more:
-
-- **The `--tile` default overlap is 0.75in, not 0.5in** — a consumer printer holds about a
-  quarter inch unprintable at each edge, so a 0.5in overlap leaves _zero_ real overlap to tape
-  against (plan-0003, decision 1).  The `units` default moves to `in` in the same breath, since
-  `pt` would have made the default overlap about a hundredth of an inch.
-- **Negative `margin` / `gutter` / `binding_margin` stay legal** — an extent may not be
-  negative, an offset may.  A negative margin is a _bleed_, verified working on v0.13.2, and it
-  can never cause bug-0006’s fault.  Full ruling in bug-0009; consequences in bug-0006 and
-  plan-0003.
+- It **broke `--booklet flip=short_edge`** — the back-page arithmetic hand-compensated the old
+  contract and began double-compensating, throwing every back page clean off the sheet.  Found
+  by the pdf-orchestrator and medpdf sessions sweeping for the pattern, fixed here, and pinned
+  by a test that fails when reverted.  Details in CHANGELOG under Unreleased.
+- It **closed bug-0007** (orphaned streams) — verified gone from imposed output; the one
+  remaining `--validate` warning is the `/ObjStm` false positive that is pdf-dump’s to fix.
+- It **opened bug-0018** — imposition still sizes cells from the pre-rotation MediaBox, so a
+  `/Rotate 90` source is now placed upright but mis-scaled.  This is a `--tile` prerequisite:
+  `--tile` derives its _grid_ from effective dimensions, so getting it wrong yields the wrong
+  sheet count.
 
 ## Open plans
 
@@ -52,7 +49,8 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Seventeen** bug reports live in `bugs/` — bug-0001 through bug-0017.  (bug-0016 was filed
+**Seventeen** bug reports live in `bugs/` — bug-0001 through bug-0018, less bug-0007
+(fixed 2026-09-09 by medpdf 0.13.0 and deleted per the bug-reports lifecycle).  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -80,62 +78,72 @@ with them.  All are on the imposition path; none is waiting on a ruling.
   so the new spec type is written to the settled pattern rather than retrofitted.  Hold back
   only the `max_dpi` item, which still needs its Phase A ruling.  **The negative-margin item is
   ruled and closed**: no sign check on offsets.
-- [ ] **medpdf bug-0024** — `place_page` (x, y) semantics undefined for a non-zero-origin
-  MediaBox.  **Hard prerequisite.**  Ruled 2026-07-24: **compensate**, so `(x, y, scale)` alone
-  determines where the visible box lands.  `--tile`’s whole job is “put source point P at sheet
-  point Q”, repeated once per sheet; write that math against today’s uncompensated behavior and
-  the medpdf fix then shifts every tile by `scale x origin` — silently, and only for
-  non-zero-origin sources, which is the hardest kind of regression to see.  The ruling’s own
-  action item already reads “audit pdf-maker imposition”; doing `--tile` first means auditing it
-  twice.  Note `place_page_tests.rs:375` pins the current behavior on the medpdf side.
-- [ ] **medpdf bug-0023** — `place_page` ignores the source page’s `/Rotate`.  **Hard
-  prerequisite, and it bites `--tile` harder than `--nup`.**  Ruled 2026-07-24: **honor
-  `/Rotate`**, swapping effective width/height for 90/270, and implement together with bug-0024
-  since they share the transform.  For `--nup` the symptom is a sideways page in a correct
-  grid; for `--tile` the grid itself is _derived_ from the source’s effective width and height,
-  so a `/Rotate 90` source computes rows and columns swapped — the wrong **number of sheets**,
-  not merely wrong content on them.  That is a page-count error baked into the arithmetic,
-  which is exactly what plan-0003’s `--dry-run` grid report exists to catch.
-- [ ] **Bump the medpdf floor when that release lands.**  `Cargo.toml` asks for
-  `medpdf = "0.12"`; once `place_page` compensates and honors `/Rotate`, building against an
-  older 0.12.x silently restores the old placement.  Same shape as the v0.11.0 encoding floor
-  already recorded in CLAUDE.md’s contract invariants — raise the requirement in the commit
-  that consumes the new behavior.
-- [ ] **bug-0007 / medpdf bug-0039** — imposition leaks one orphaned zero-byte stream per
-  sheet.  Filed on the medpdf side 2026-09-09 as bug-0039 and handed to that session, since
-  `create_blank_page` and `place_page` are both theirs; bug-0007 stays open here as the
-  consumer-side record until it lands.  **Not a prerequisite, but batched with the two medpdf
-  bugs above** so one family release carries all three.  `--tile` multiplies the leak by the
-  sheet count — a twelve-sheet banner leaks twelve objects.  Note the mechanism is _not_
-  confirmed: `place_page` appears to preserve the destination’s `/Contents` rather than replace
-  it, which contradicts bug-0007’s original explanation while the orphan count still tracks the
-  sheet count exactly.
-- [ ] **plan-0003 implementation** once the five prerequisites land.  Land it **before**
+- [x] **medpdf bug-0023, bug-0024 and bug-0039 — DONE.**  Shipped in medpdf 0.13.0
+  (`6208ff4`).  `place_page` now anchors the placed bounding box at `(x, y)` for any MediaBox
+  origin and any rotation, and honors the source `/Rotate`; the orphaned-stream leak is gone.
+  Two new helpers replace the geometry pdf-maker used to model itself:
+  `medpdf::get_page_effective_size` (display dimensions, `/Rotate` applied) and
+  `medpdf::placed_page_size(doc, page, scale, rotation)` (the real footprint, computed from the
+  same transform `place_page` emits).  `get_page_media_box` is now explicitly the _pre-rotation_
+  box.
+- [x] **medpdf floor raised to `0.13` — DONE.**  Necessary, not cosmetic: an older 0.12.x
+  silently restores the previous placement.
+- [x] **The `--booklet` regression that adoption caused — FIXED.**  `apply_booklet` passed
+  `(cx + w, cy + h)` for the rotated back side to undo the old contract’s rotation excursion;
+  against 0.13.0 that double-compensates and puts every back page off the sheet.  Now `(cx, cy)`
+  for both branches.  Pinned by `cli_booklet_back_pages_land_on_the_sheet`, which asserts on the
+  destination rectangle — **the `cm` scale coefficients are unchanged by this fault**, so the
+  obvious sign-of-scale assertion passes broken _and_ fixed.  Verified failing on revert.
+- [ ] **bug-0018** — imposition sizes cells from the pre-rotation MediaBox, so a `/Rotate 90`
+  source is placed upright but mis-scaled and mis-centred.  **New `--tile` prerequisite**, and
+  the last one: `--tile` derives its grid from effective dimensions, so an unhonored
+  transposition gives the wrong _number of sheets_.  Fix by switching `apply_nup` /
+  `apply_booklet` to `get_page_effective_size`, confirming with `placed_page_size` wherever a
+  placement rotation is also in play.  **Status is code-trace, not reproduced** — build the
+  `/Rotate 90` fixture first (the report says how).
+- [ ] **plan-0003 implementation** once bug-0005, bug-0006, bug-0009 and bug-0018 land.  Land it **before**
   bug-0012, so the doc sweep documents all three imposition modes once instead of twice.
 
 **bug-0008 is _not_ a prerequisite**, contrary to plan-0003’s first draft.  It concerns
 `auto_grid` mapping an `n` onto a grid; `--tile` derives its grid from geometry and never calls
 `auto_grid`.  It stays in Phase A on its own merits.
 
-### Phase A — decisions from Chris (blocking their own Phase C work; none blocks `--tile`)
+### Phase A — RULED 2026-09-09; implementation moves to Phase C
 
-- [ ] **bug-0003** — duplicates in a page spec (`"1,1"` silently yields one page).  Rule: error
-  on duplicates (recommended) vs. honor them (a medpdf feature).  Gates Phase C work and one
-  README line.
-- [ ] **bug-0008** — `--nup n=3` silently produces 4-up.  Rule: restrict `n` to canonical values
-  (recommended) vs. honor arbitrary `n` vs. document rounding.  Also rule on the
-  stacked-portrait `n=2` auto layout.
-- [ ] **bug-0001** — booklet duplex-flip compensation looks inverted (backs rotate on
-  `short_edge`, not `long_edge`).  **Needs a physical duplex print to confirm** — the one
-  finding a terminal cannot verify.
-- [ ] **bug-0002** — `--draw-line` `width` ignores `units=`.  Rule: convert like the coordinates
-  (recommended) vs. document points-only.
-- [ ] **bug-0009 item 4** — `--draw-image max_dpi=0` is accepted (an existing unit test asserts
-  it).  Rule: define 0 as “no downsampling” and document, or reject.
-- [ ] **bug-0016** — `--watermark` `\n`/`\t` escapes do not render as multiple lines.  Rule:
-  where the fix lives.  medpdf owns the font metrics (leading, ascent/descent) a real
-  line-layout needs, so a pdf-maker-side `\n`-split would re-derive them badly; the plausible
-  alternative is to stop documenting the escapes.  Cross-repo either way.
+All six rulings received and recorded in their reports.  One item still needs Chris — a
+physical print — and one needs his pick between two options; both are called out below.  The
+rulings themselves are settled and no longer block anything.
+
+- [x] **bug-0003** — **honor duplicates.**  `"1,1"` yields two copies of page 1.  Needs a medpdf
+  API change: duplicates are invisible to pdf-maker today because `parse_page_spec` collapses
+  them before pdf-maker ever sees the list.  Handed to the medpdf session — see Phase C.
+- [x] **bug-0008** — **restrict `n` to the canonical values.**  `1, 2, 4, 6, 8, 9, 16`; anything
+  else errors and points the caller at `cols=`/`rows=`.  **Second half, `auto_grid(2)`:
+  recommendation is to change it to side-by-side landscape** — see the analysis recorded in
+  bug-0008 under “The `n=2` question, answered”.  In short: `n=2` is the _only_ entry in
+  `auto_grid`’s table that disagrees with print-dialog convention (4, 6, 8, 9 and 16 are all
+  already canonical), it disagrees with pdf-maker’s own `--booklet`, which puts two pages
+  side by side on a landscape sheet, and it costs 29 % of linear scale (measured: 0.5 vs
+  0.647 on letter).  One-line change, `2 => (2, 1)`; two unit tests pin the old value.
+  **Chris to confirm the change, since it alters existing output.**
+- [x] **bug-0002** — **convert `width` like the coordinates.**  `--draw-line` `width` respects
+  `units=`.  Behavior change; note in CHANGELOG.
+- [x] **bug-0009 item 4** — **`max_dpi=none` is the public spelling** for “no downsampling”,
+  mapped internally to an enum (or 0) so the sentinel never reaches the CLI surface.  A numeric
+  `max_dpi` below 1.0 — including 0 — is an invalid-value error.  The existing
+  `test_draw_image_spec_max_dpi_zero`, which asserts today’s acceptance of `0`, gets rewritten
+  rather than deleted: it becomes the assertion that `0` is now rejected and `none` accepted.
+- [x] **bug-0016** — **the fix is a medpdf feature.**  Multi-line watermark text belongs where
+  the font metrics are.  Unblocks medpdf `plan-0002`, whose Tier 1 (`\n`-split, metrics-based
+  leading, block-level valign) needs no API change and makes pdf-maker’s documented escapes
+  render.  The medpdf session has been told.
+- [ ] **bug-0001** — **needs Chris at a printer.**  Verification kit generated 2026-09-09 in
+  `bugs/bug-0001/`; read `bugs/bug-0001/HOW-TO-VERIFY.md` first.  Print
+  `booklet-SHORT-edge.pdf` with the printer set to **Short-Edge** binding and
+  `booklet-LONG-edge.pdf` with **Long-Edge** binding, then answer one question per sheet: is
+  the back right-side up?  The analysis predicts **both come out upside down** — the two
+  settings are wrong for opposite reasons, so the test needs no judgement about which file is
+  which.  Record the outcome, the printer model, and the driver’s exact wording in the report.
 
 ### Phase B — independent code fixes, in severity order (no ruling needed, off the `--tile` path)
 
@@ -163,21 +171,28 @@ Each fix lands with a test that fails when the fix is reverted.
   against.  Pairs naturally with bug-0015, which is the other XMP defect.
 - [ ] **bug-0015** — XMP dates not ISO 8601.
 
-### Phase C — ruling-dependent code (after the matching Phase A decision)
+### Phase C — ruling-dependent code (all rulings now in hand)
 
 - [ ] **bug-0003** implementation — needs a medpdf API change (duplicates are invisible to
   pdf-maker today); coordinate with the sibling `../medpdf` workspace and its release flow
   (`PUBLISHING.md`).
 - [ ] **bug-0016** implementation — medpdf-side if that is the ruling; batch it with any other
   medpdf change so the family releases once.
-- [ ] **bug-0008** implementation.
+- [ ] **bug-0008** implementation — restrict `n` to `1, 2, 4, 6, 8, 9, 16`, plus the
+  `auto_grid(2)` change to side-by-side landscape **once Chris confirms**, since it alters
+  existing output.  Two unit tests pin the old value (`layout.rs:301`, `layout.rs:364`).
+- [ ] **bug-0009 item 4** implementation — `max_dpi=none` as the public spelling, numeric
+  values below 1.0 rejected, `test_draw_image_spec_max_dpi_zero` rewritten rather than deleted.
+- [ ] **bug-0016** — nothing to do here; medpdf owns the fix and has been told.  This report
+  closes when their `plan-0002` Tier 1 ships and the documented escapes render.
 - [ ] **bug-0002** implementation (behavior change; note in CHANGELOG).
 - [ ] **bug-0001** implementation (only after physical confirmation).
 
 ### Phase D — cross-repo
 
 - [ ] File in **pdf-dump’s** repo (not here): its validator falsely flags `/ObjStm` containers
-  as “unreachable from trailer” on every modern-format PDF.  Evidence in bug-0007’s repro.
+  as “unreachable from trailer” on every modern-format PDF.  Still reproducible: an imposed
+  output now validates with exactly one warning, and it is this false positive.
 
 ### Phase E — documentation (last, once behavior settles)
 
@@ -199,8 +214,9 @@ them afterwards means writing them twice.  The medpdf pair comes first for a str
 they change the primitive `--tile` would be built on, both are already ruled, and both rulings
 end with “audit pdf-maker imposition” — so landing them after `--tile` means auditing code that
 did not exist when the ruling was made.  A sibling-crate release cycle, not the fix, is the
-schedule, so everything medpdf-side (bug-0023, bug-0024, and probably bug-0007) is batched into
-one release and started before anything here.  Decisions still precede their dependent code (a wrong guess costs a
+schedule — which is why everything medpdf-side was batched into 0.13.0 and done first.  That
+judgement paid: the adoption broke `--booklet` in a way no existing test could see, and finding
+that before `--tile` was written cost an afternoon instead of a re-release.  Decisions still precede their dependent code (a wrong guess costs a
 re-release); silent-wrong-output fixes still precede hygiene; docs still come last, now
 including `--tile`, so they are written once.  Fixed bugs: delete the report in the fixing
 commit and name the ID in the message, per the bug-reports rule.  Behavior changes here warrant

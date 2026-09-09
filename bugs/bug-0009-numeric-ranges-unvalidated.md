@@ -68,3 +68,22 @@ silently dropped.
 ## Why this fix addresses the bug
 
 Every listed value has no meaningful interpretation outside its range; today each is either silently clamped (alpha), silently degenerate (dimensions), or silently off-page (negative margins).  Parse-time rejection converts all of them into loud, pre-work usage errors at the one layer that sees the caller’s literal input — and matches the precedent the codebase already set for `count` and `repeat`.
+
+## RULING 2026-09-09 — item 4, `max_dpi`
+
+Chris’s call, and it is a design rather than a yes/no: **`none` is the public spelling.**
+
+- `max_dpi=none` means “no downsampling”, and is the only way to ask for it.
+- Internally that maps to an enum variant (or, if it must stay numeric, 0) — the sentinel
+  never appears on the CLI surface, so the public interface is not polluted with a magic
+  number whose meaning has to be memorized.
+- A **numeric `max_dpi` below 1.0, including 0, is an invalid-value error** naming the key and
+  the allowed range.  So the old spelling stops working rather than quietly meaning something.
+
+`test_draw_image_spec_max_dpi_zero` in `src/spec_types/drawing.rs`, which currently asserts
+that `0` is accepted, is **rewritten rather than deleted**: it becomes the pair of assertions
+that `max_dpi=0` is now rejected and `max_dpi=none` accepted.  Silently flipping it would
+erase the record that the old behavior was deliberate.
+
+This closes the last open question in this report; the rest of the parse-level validation
+needs no further ruling.
