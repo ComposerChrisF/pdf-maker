@@ -1,5 +1,9 @@
 # TODO
 
+## Plans
+
+- [ ] **plan-0003 — `--tile`: split one large page across many sheets, with overlap.**  Filed 2026-09-09 from the Publisher retirement review.  Publisher goes away 2026-10-01 and takes tiled banner printing with it; PowerPoint has no tiled printing at all, and Affinity has it but re-introduces the single-vendor-format dependency the migration exists to escape.  `--tile` is the **inverse of `--nup`** and shares its cell arithmetic, which is why it belongs here.  **Land after bug-0005/0006/0008/0009** — all four are open against the imposition path this extends, and one of them is that `--help` documents no `--nup` keys at all.  Not blocking 1 October: the existing banner PDF is already tiled; what is lost is re-tiling a changed one.
+
 ## Bug-fix queue from the 2026-07-16 deep review
 
 Fifteen bug reports live in `bugs/` (bug-0001 through bug-0015; IDs are alphabetical by slug per the bug-reports rule — they encode nothing about priority).  **Work them in the phase order below**, not in ID order.  Each report is self-contained: description, verified repro (Rust-test-ready), suggested fix, and why it works.  Reports marked _decision_ need Chris’s ruling before any code changes; do not guess.
