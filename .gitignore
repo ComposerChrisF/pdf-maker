@@ -9,6 +9,11 @@ out*.pdf
 !bugs/**
 # ...except build output from a repro crate, the one ignore the rule permits there.
 bugs/**/target/
+# ...and except OS cruft. `!bugs/**` overrides ~/.gitignore_global for this subtree,
+# so without this line a Finder-created .DS_Store inside bugs/ or any bugs/bug-NNNN/
+# fixture directory becomes committable — and fixtures ARE committed by convention,
+# so it would stick. Re-ignore it here, after the negation, where it wins.
+.DS_Store
 .cargo/config.toml
 .claude/settings.local.json
 .publish-bin.toml
