@@ -310,9 +310,14 @@ struct Args {
     overlay: Vec<OverlaySpec>,
     #[arg(long, help = "Pad output to a multiple of N pages with blank pages")]
     pad_to: Option<PadToSpec>,
+    // `requires`, not a runtime check: the flag has no meaning without --pad-to,
+    // so a lone --pad-last-page-file is malformed on its face and belongs in clap's
+    // exit-2 class. It used to parse, have its file existence-checked, and then be
+    // silently never read (bug-0011).
     #[arg(
         long,
-        help = "Use a specific PDF page as the padding template. Spec keys: file, page"
+        requires = "pad_to",
+        help = "Use a specific PDF page as the padding template. Spec keys: file, page. Requires --pad-to"
     )]
     pad_last_page_file: Option<PadFileSpec>,
     #[arg(
@@ -414,7 +419,12 @@ impl From<EncryptionAlgo> for EncryptionAlgorithm {
 }
 
 fn format_xmp_metadata(doc_uuid: &str) -> String {
-    let now = chrono::Local::now();
+    // RFC 3339 is the ISO 8601 profile the XMP Date value type requires:
+    // `2026-09-10T07:02:57-10:00`. Chrono's `Display` yields
+    // `2026-09-10 07:02:57.068787 -10:00` — a space instead of the `T`, six
+    // fractional digits, and a spaced offset — which conformant readers reject
+    // (bug-0015). Seconds precision is ample for document metadata.
+    let now = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
     let version = env!("CARGO_PKG_VERSION");
     format!("<?xpacket begin=\"?\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>
 <x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\" xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\" xmlns:pdfxid=\"http://www.npes.org/pdfx/ns/id/\">
@@ -542,6 +552,22 @@ fn apply_overlays(
     for spec in overlays {
         eprintln!("Applying overlay from {}", spec.file.display());
         let overlay_doc = Document::load(&spec.file)?;
+        // Route the single page number through `page_spec::expand` like every other
+        // caller-named page (the CLAUDE.md invariant), so an out-of-range src_page
+        // names the flag, the file, the page and the file's real page count.
+        // Previously it fell through to medpdf's `Page 99 not found in source
+        // document`, which named none of them — unusable with several PDFs in one
+        // invocation (bug-0010). Checked here, before the target loop, so it fires
+        // even when `target_pages` resolves to no work.
+        page_spec::expand(
+            &spec.src_page.to_string(),
+            overlay_doc.get_pages().len() as u32,
+            &format!(
+                "--overlay src_page={} for file '{}'",
+                spec.src_page,
+                spec.file.display()
+            ),
+        )?;
         let target_page_indices = page_spec::expand(
             &spec.target_pages,
             page_ids.len() as u32,
@@ -846,8 +872,36 @@ fn check_paths(args: &Args) -> Result<(), MedpdfError> {
     Ok(())
 }
 
+/// Validate every caller-named page number that does not travel through a page
+/// spec, before any work begins.
+///
+/// Only `--pad-last-page-file page=` needs it here; `--overlay src_page=` is
+/// checked in `apply_overlays`, where the file is already loaded. The difference
+/// matters: whether the pad page is ever *consulted* depends on the document's
+/// length modulo `--pad-to`, so a document that already sits on the multiple used
+/// to accept `page=99` in silence and exit 0 — a latent invalid argument waiting
+/// for an input of a different length (bug-0010). An argument's validity must not
+/// depend on how much work it happens to cause, and `--dry-run` should catch it
+/// either way.
+fn check_page_references(args: &Args) -> Result<(), MedpdfError> {
+    if let Some(spec) = &args.pad_last_page_file {
+        let pad_doc = Document::load(&spec.file)?;
+        page_spec::expand(
+            &spec.page.to_string(),
+            pad_doc.get_pages().len() as u32,
+            &format!(
+                "--pad-last-page-file page={} for file '{}'",
+                spec.page,
+                spec.file.display()
+            ),
+        )?;
+    }
+    Ok(())
+}
+
 fn run(args: &Args) -> Result<Value, MedpdfError> {
     check_paths(args)?;
+    check_page_references(args)?;
 
     let mut doc = init_document();
     let mut page_ids = Vec::new();
@@ -997,6 +1051,38 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
             "draw_images": args.draw_image.len(),
         },
     }))
+}
+
+#[cfg(test)]
+mod xmp_tests {
+    use super::format_xmp_metadata;
+
+    /// bug-0015: the three `xmp:*Date` properties must be ISO 8601 (RFC 3339),
+    /// the profile the XMP Date value type requires. They used to carry chrono's
+    /// `Display` form — `2026-09-10 07:02:57.068787 -10:00`, with a space where
+    /// the `T` belongs — so every PDF pdf-maker wrote had three malformed dates.
+    ///
+    /// Asserted by parsing the value back with `DateTime::parse_from_rfc3339`
+    /// rather than by matching a shape: a hand-written pattern can accept a string
+    /// no conformant reader would, which is the failure being fixed.
+    #[test]
+    fn xmp_dates_are_rfc3339() {
+        let xmp = format_xmp_metadata("test-uuid");
+        let mut found = 0;
+        for attr in ["xmp:CreateDate", "xmp:ModifyDate", "xmp:MetadataDate"] {
+            let needle = format!("{attr}=\"");
+            let start = xmp.find(&needle).expect("attribute present") + needle.len();
+            let value = &xmp[start..start + xmp[start..].find('"').unwrap()];
+            assert!(
+                !value.contains(' '),
+                "{attr} must not contain a space: {value}"
+            );
+            chrono::DateTime::parse_from_rfc3339(value)
+                .unwrap_or_else(|e| panic!("{attr} must be RFC 3339, got '{value}': {e}"));
+            found += 1;
+        }
+        assert_eq!(found, 3, "all three date properties must be present");
+    }
 }
 
 #[cfg(test)]

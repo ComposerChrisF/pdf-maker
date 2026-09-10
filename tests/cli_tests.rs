@@ -1741,3 +1741,160 @@ fn cli_draw_line_width_honors_units() {
         "width=1 with units=in must emit 72pt, not 1pt (bug-0002); operators were:\n{ops}"
     );
 }
+
+/// bug-0011: `--pad-last-page-file` without `--pad-to` used to parse, have its
+/// file existence-checked, and then never be read — a caller-stated intent that
+/// did nothing, at exit 0. The dependency is now structural (clap `requires`), so
+/// it is a usage error naming the missing flag.
+#[test]
+fn cli_pad_file_without_pad_to_is_a_usage_error() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let pad = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(pad.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--pad-last-page-file",
+            &format!("file={},page=1", pad.path().display()),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "a flag that is malformed on its face is clap's exit 2, not a runtime error"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("--pad-to"),
+        "the error must name the flag that is missing: {stderr}"
+    );
+}
+
+/// bug-0010, the latent case: whether `--pad-last-page-file page=` was checked at
+/// all depended on the document's length modulo `--pad-to`. Four pages padded to a
+/// multiple of 4 need no padding, so `page=99` was never consulted and the run
+/// exited 0 — a bad argument lying in wait for an input of a different length.
+/// Validation now happens up front, so the argument's validity does not depend on
+/// how much work it happens to cause.
+#[test]
+fn cli_pad_file_page_is_validated_even_when_no_padding_is_needed() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let pad = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(pad.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--pad-to",
+            "4",
+            "--pad-last-page-file",
+            &format!("file={},page=99", pad.path().display()),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "out of range is a tool error"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    for needle in ["--pad-last-page-file", "99", "1 page(s)"] {
+        assert!(
+            stderr.contains(needle),
+            "the error must name {needle}: {stderr}"
+        );
+    }
+}
+
+/// bug-0010: an out-of-range `--overlay src_page` used to fail with medpdf's
+/// `Page 99 not found in source document` — no flag, no file, no real page count,
+/// which is unusable when several PDFs are in one invocation. It now routes
+/// through `page_spec::expand` like every other caller-named page.
+#[test]
+fn cli_overlay_src_page_error_names_flag_file_and_count() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let overlay = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(overlay.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--overlay",
+            &format!("file={},src_page=99", overlay.path().display()),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    for needle in ["--overlay", "src_page=99", "1 page(s)"] {
+        assert!(
+            stderr.contains(needle),
+            "the error must name {needle}: {stderr}"
+        );
+    }
+    assert!(
+        stderr.contains(&overlay.path().display().to_string()),
+        "the error must name the file it is about: {stderr}"
+    );
+}
+
+/// bug-0010: page numbers are 1-based, so `0` is decidable from the argument text
+/// alone — clap's exit 2, before any I/O. It used to be accepted at parse and fail
+/// at apply time with the same anonymous message as the out-of-range case.
+#[test]
+fn cli_page_zero_is_a_usage_error() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let other = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(other.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+
+    for (flag, spec) in [
+        (
+            "--overlay",
+            format!("file={},src_page=0", other.path().display()),
+        ),
+        (
+            "--pad-last-page-file",
+            format!("file={},page=0", other.path().display()),
+        ),
+    ] {
+        let mut cmd = pdf_maker_bin();
+        cmd.args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+        ]);
+        // --pad-last-page-file requires --pad-to (bug-0011), so supply it: this
+        // test is about the zero, and must not pass for the other flag's reason.
+        if flag == "--pad-last-page-file" {
+            cmd.args(["--pad-to", "4"]);
+        }
+        let result = cmd.args([flag, &spec]).output().unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(2),
+            "{flag} with a zero page must be a usage error"
+        );
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            stderr.contains("1 or greater"),
+            "{flag}: the error must say pages are 1-based: {stderr}"
+        );
+    }
+}

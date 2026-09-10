@@ -15,20 +15,33 @@ use std::path::Path;
 
 /// A caller-asserted input file (an input PDF, an overlay source, a
 /// `--draw-image` file, a `--pad-last-page-file`) must exist and be a file.
+///
+/// The probe answers three ways, not two (`positive-evidence-of-absence.md`):
+/// present, provably absent (`NotFound`, and nothing else), or unknown.  It used
+/// to use `path.exists()`, a bare bool that folds EACCES, EIO and ELOOP in with
+/// `NotFound` — so an input that existed but could not be stat-ed was reported as
+/// missing, sending the reader hunting for a typo that was not there (bug-0013).
+/// Nothing here gates a destructive action, so the stakes are diagnostic only;
+/// the three-answer shape is still the right one, and it is what makes the
+/// message true.
 pub fn check_input_file(path: &Path, what: &str) -> Result<()> {
-    if !path.exists() {
-        return Err(MedpdfError::new(format!(
-            "{what} does not exist: {}",
-            path.display()
-        )));
-    }
-    if path.is_dir() {
-        return Err(MedpdfError::new(format!(
+    // `symlink_metadata`, not `metadata`: a symlink to a missing target should
+    // report as a broken link rather than borrowing its target's absence.
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => Err(MedpdfError::new(format!(
             "{what} is a directory, not a file: {}",
             path.display()
-        )));
+        ))),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(MedpdfError::new(format!(
+            "{what} does not exist: {}",
+            path.display()
+        ))),
+        Err(e) => Err(MedpdfError::new(format!(
+            "{what} cannot be accessed: {} ({e})",
+            path.display()
+        ))),
     }
-    Ok(())
 }
 
 /// The output file's parent directory must already exist; pdf-maker never
@@ -46,14 +59,25 @@ pub fn check_output_path(output: &Path) -> Result<()> {
         // A bare filename ("out.pdf") writes into the current directory.
         _ => return Ok(()),
     };
-    if !parent.is_dir() {
-        return Err(MedpdfError::new(format!(
+    // The same three answers as `check_input_file`, for the same reason: an
+    // unreadable parent directory is not a missing one, and saying so sends the
+    // reader to the wrong fix (bug-0013).
+    match std::fs::metadata(parent) {
+        Ok(m) if m.is_dir() => Ok(()),
+        Ok(_) => Err(MedpdfError::new(format!(
+            "output path's parent is not a directory: {}",
+            parent.display()
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(MedpdfError::new(format!(
             "output directory does not exist: {} -- pdf-maker never creates directories; \
              create it first, then re-run",
             parent.display()
-        )));
+        ))),
+        Err(e) => Err(MedpdfError::new(format!(
+            "output directory cannot be accessed: {} ({e})",
+            parent.display()
+        ))),
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -85,6 +109,50 @@ mod tests {
     #[test]
     fn bare_filename_is_accepted() {
         assert!(check_output_path(Path::new("out.pdf")).is_ok());
+    }
+
+    /// bug-0013: an input that exists but cannot be stat-ed must not be reported
+    /// as missing. `path.exists()` folded EACCES into `false`, so the message sent
+    /// the reader hunting for a typo when the problem was permissions.
+    ///
+    /// Skipped when running as root, which bypasses the permission check entirely —
+    /// a test that silently passes for the wrong reason is worse than no test, so
+    /// it says so rather than asserting.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_input_reports_access_not_absence() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if unsafe { libc_geteuid() } == 0 {
+            eprintln!("skipping: running as root, which bypasses directory permissions");
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("in.pdf");
+        std::fs::write(&file, b"%PDF-1.7\n").unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let err = check_input_file(&file, "input PDF").unwrap_err();
+        let msg = err.to_string();
+
+        // Restore before asserting, so a failure still leaves a removable tempdir.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(
+            msg.contains("cannot be accessed"),
+            "an unreadable input must report access failure, not absence: {msg}"
+        );
+        assert!(
+            !msg.contains("does not exist"),
+            "the file exists; saying otherwise sends the reader to the wrong fix: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    unsafe extern "C" {
+        #[link_name = "geteuid"]
+        fn libc_geteuid() -> u32;
     }
 
     #[test]

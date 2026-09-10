@@ -18,9 +18,18 @@ impl FromStr for OverlaySpec {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let kv = KvParser::parse(s, "overlay", &["file", "src_page", "target_pages"])?;
+        let src_page = kv.required_parse::<u32>("src_page")?;
+        // Page numbers are 1-based, so 0 is wrong on its face — decidable from the
+        // argument text alone, which makes it clap's exit 2 rather than a runtime
+        // error (bug-0010). It used to reach the apply stage and fail there with
+        // `Page 0 not found in source document`, which named neither the flag nor
+        // the file. Same precedent as `count=0` and `repeat=0`.
+        if src_page == 0 {
+            return Err("overlay 'src_page' must be 1 or greater (pages are 1-based)".to_string());
+        }
         Ok(OverlaySpec {
             file: PathBuf::from(kv.required_str("file")?),
-            src_page: kv.required_parse::<u32>("src_page")?,
+            src_page,
             target_pages: kv
                 .get("target_pages")
                 .map(str::to_string)
@@ -55,9 +64,14 @@ impl FromStr for PadFileSpec {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let kv = KvParser::parse(s, "pad-file", &["file", "page"])?;
+        let page = kv.optional_parse::<u32>("page")?.unwrap_or(1);
+        // 1-based, as above (bug-0010).
+        if page == 0 {
+            return Err("pad-file 'page' must be 1 or greater (pages are 1-based)".to_string());
+        }
         Ok(PadFileSpec {
             file: PathBuf::from(kv.required_str("file")?),
-            page: kv.optional_parse::<u32>("page")?.unwrap_or(1),
+            page,
         })
     }
 }

@@ -5,6 +5,48 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.23.0] — 2026-09-10
+### Changed
+- **BEHAVIOR CHANGE — `--pad-last-page-file` now requires `--pad-to` (bug-0011).**
+  Alone, it parsed, had its `file=` existence-checked, and was then never read: the
+  caller asked for a padding template and got an unchanged document at exit 0, with
+  nothing on stderr.  The dependency is now declared in clap, so the lone flag is a
+  usage error (exit 2) naming `--pad-to`.
+
+- **BEHAVIOR CHANGE — `src_page=0` and `page=0` are usage errors (bug-0010).**
+  Page numbers are 1-based, and a zero is wrong on its face, so it is rejected at
+  parse (exit 2) instead of reaching the apply stage.
+
+### Fixed
+- **`--pad-last-page-file page=` is validated up front (bug-0010).**  It used to be
+  checked only when padding actually happened, so a document already sitting on the
+  `--pad-to` multiple accepted `page=99` in silence — a bad argument waiting for an
+  input of a different length.  An argument’s validity must not depend on how much
+  work it causes, and `--dry-run` should catch it either way.
+
+- **Out-of-range page errors for `--overlay src_page` and `--pad-last-page-file
+  page` now name the flag, the file, the page and the file’s real page count
+  (bug-0010).**  Both used to surface medpdf’s `Page 99 not found in source
+  document`, which named none of the four — unusable with several PDFs in one
+  invocation.  Both now route through `page_spec::expand`, the same path every
+  other caller-named page takes.
+
+- **An unreadable input is no longer reported as missing (bug-0013).**  The probe
+  used `path.exists()`, a bare bool that folds EACCES, EIO and ELOOP in with
+  `NotFound`, so a file that existed but could not be stat-ed was announced as
+  absent and sent the reader hunting for a typo that was not there.  It now answers
+  three ways — present, provably absent, or “cannot be accessed”, naming the
+  underlying error — per `positive-evidence-of-absence.md`.  The output-directory
+  probe got the same treatment.  Nothing here gates a destructive action, so the
+  stakes were only diagnostic; the message is now true either way.
+
+- **XMP dates are ISO 8601 (bug-0015).**  `xmp:CreateDate`, `xmp:ModifyDate` and
+  `xmp:MetadataDate` carried chrono’s `Display` form —
+  `2026-09-10 07:02:57.068787 -10:00`, a space where the `T` belongs — which the
+  XMP Date value type does not accept.  Every PDF pdf-maker had written carried
+  three malformed dates.  They are now RFC 3339 (`2026-09-10T07:02:57-10:00`),
+  pinned by a test that parses the value back rather than matching a shape.
+
 ## [0.22.0] — 2026-09-10
 ### Changed
 - **BEHAVIOR CHANGE — `--draw-line`’s `width` now honors `units=` (bug-0002).**

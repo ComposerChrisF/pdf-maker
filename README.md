@@ -93,6 +93,8 @@ pdf-maker is a generator, not an analyzer: it has no findings concept, so codes 
 
 Input paths (input PDFs, `--overlay file`, `--draw-image file`, `--pad-last-page-file file`) must exist; a missing one exits 1 naming it.  The output **directory** must already exist — pdf-maker writes the output file but never creates a directory.
 
+**A path that cannot be read is not a path that is missing**, and pdf-maker says which: an input it cannot stat (permissions, a broken link, an I/O error) reports “cannot be accessed”, naming the underlying error, rather than claiming the file does not exist.  The two send you to different fixes.
+
 ### Machine-Readable Output
 
 `--json` prints a summary object on stdout (all human progress output stays on stderr):
@@ -357,8 +359,10 @@ Overlay content from another PDF onto pages:
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `file` | Yes | — | Source PDF file |
-| `src_page` | Yes | — | Page number from source PDF to overlay |
+| `src_page` | Yes | — | Page number from source PDF to overlay (1-based; `0` is a usage error) |
 | `target_pages` | No | `all` | Destination pages to apply overlay |
+
+An out-of-range `src_page` is an error naming the flag, the file, the page and the file’s real page count — the same contract as any other caller-named page.
 
 ## Padding
 
@@ -379,7 +383,9 @@ Optionally use a specific page for the last padding page:
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `file` | Yes | — | PDF file for last padding page |
-| `page` | No | 1 | Page number to use from file |
+| `page` | No | 1 | Page number to use from file (1-based; `0` is a usage error) |
+
+`--pad-last-page-file` **requires `--pad-to`** — alone it has no meaning, so it is refused as a usage error (exit 2) rather than silently ignored.  Its `page` is validated up front, whether or not the document actually needs padding: an argument’s validity should not depend on how much work it happens to cause.
 
 ## Encryption
 

@@ -13,14 +13,18 @@ gone, and `--draw-line`’s `width` now honors `units=`.  Both carry a test veri
 its own fix is reverted; bug-0002’s README row was updated in the same commit, discharging half
 the follow-up obligation below.
 
-**What is next, in order:** the rest of Phase B (`bug-0011`, `bug-0010`, `bug-0013`,
-`bug-0015`), then `bug-0003` — which is **not** startable here alone; see the medpdf note
-directly below.
+**Phase B is CLOSED (2026-09-10, v0.23.0).**  `bug-0011`, `bug-0010`, `bug-0013` and
+`bug-0015` all landed together, each with a test verified to fail when its own fix is reverted.
 
-**`bug-0003` is blocked on a sibling repo, and on one sequencing question.**  Honoring duplicate
-pages needs medpdf to stop collapsing them, which is **medpdf `plan-0006`** — already written,
-ruled, consumer-audited by the pdf-orchestrator session, and marked _safe to land_.  Two things
-stand between it and this repo:
+**What is next:** `bug-0003` alone — which is **not** startable here; see the medpdf note
+directly below.  With it done, `bugs/` is empty.
+
+**`bug-0003` is with the medpdf session as of 2026-09-10.**  Chris ruled that this session should
+hand the work over directly, so it did: medpdf now holds **`plan-0006`** (stop collapsing
+duplicates) plus a blocker this session found and filed there, **medpdf `bug-0040`** — see
+below.  The medpdf session will report a version when it releases; adopting it here means
+raising the floor, honoring duplicates in `merge_pages`, updating the README duplicates
+paragraph, and closing `bug-0003`.  Two things stand between the plan and this repo:
 
 1. **A deconflict the plan itself asks for.**  medpdf `plan-0006` says to check with the
    pdf-orchestrator session before starting, because _pdf-orchestrator_ `plan-0002` (dry-run
@@ -28,15 +32,17 @@ stand between it and this repo:
    the parser change.  As of 2026-09-10 that plan is filed but unimplemented — no
    implementation commits in that repo — so the two are not actually in flight together, but
    the check is Chris’s to make, not an agent’s to skip.
-2. **A pdf-maker-side half the plan does not cover.**  Even with duplicates preserved in the
-   parsed list, `merge_pages` feeds each page number to `medpdf::copy_page_with_cache`, whose
-   `copied_objects` map returns the **same** `ObjectId` for a repeated source page — putting one
-   page object into `/Kids` twice, which is malformed PDF (a `/Page` has a single `/Parent`).
-   Honoring duplicates therefore needs a genuine re-copy of the page object on the second and
-   later occurrences, sharing resources but not identity.  bug-0003 names this; medpdf
-   `plan-0006` does not, because it is this repo’s problem.  **Do not adopt the new medpdf
-   behavior without fixing this**, or `"1,1"` will produce a two-entry page tree pointing at one
-   object — a silent malformation, which is exactly the failure class this repo keeps closing.
+2. **A blocker the plan did not cover — now filed as medpdf `bug-0040` (2026-09-10).**  It turned
+   out not to be this repo’s problem after all, which is why it moved.  `copy_page_with_cache`
+   itself appends to `/Kids` and increments `/Count`, so the second call for a repeated page
+   returns the cached page id **and lists it a second time**: two slots, one object, produced
+   entirely inside medpdf.  Measured there with its own fixtures — both calls return `(3, 0)`
+   while `get_pages().len()` reports 2 — and the concrete harm needs no spec argument: rotating
+   only the “second” copy leaves the first with `/Rotate Some(90)`, because they are one object.
+   A two-test repro is committed at medpdf `bugs/bug-0040/repro.rs`.  **pdf-orchestrator has the
+   same exposure** through `<ImportPdf pages="1,1">`, where `apply_children_to_page` would then
+   apply one page’s children twice to one object; that repo has no session running and has not
+   been told.
 
 **The remaining README follow-up.**  bug-0003’s semantics are documented in README.md as
 _current behavior plus the pending change_ (the “Page Specifications” duplicates paragraph);
@@ -74,8 +80,8 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Five** bug reports live in `bugs/` — bug-0003, bug-0010, bug-0011, bug-0013 and bug-0015.
-Eleven were fixed on 2026-09-09 and two more on 2026-09-10, each deleted per the bug-reports
+**One** bug report lives in `bugs/` — **bug-0003**, and it is with the medpdf session (above).
+Eleven were fixed on 2026-09-09 and six more on 2026-09-10, each deleted per the bug-reports
 lifecycle.  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
@@ -188,14 +194,25 @@ Each fix lands with a test that fails when the fix is reverted.
   validated by a `value_parser`; the odd-positional-count check is reported through clap.  The
   exit-code contract is pinned from both sides — statically-invalid invocations exit 2, an
   out-of-range page still exits 1.
-- [ ] **bug-0011** — `--pad-last-page-file` without `--pad-to` silently ignored.  One-line clap
-  `requires`.
-- [ ] **bug-0010** — `--overlay src_page=` / `--pad-last-page-file page=` validated late or
-  never, with errors that name no flag, file, or page count.  Worth doing before `--tile`
-  ships if it is cheap: `--tile`’s `pages=` key is another `page_spec::expand` consumer and
-  would inherit the better errors.
-- [ ] **bug-0013** — unreadable input misreported as “does not exist” (two-state probe in
-  `src/paths.rs`).
+- [x] **bug-0011 — DONE 2026-09-10 (v0.23.0).**  The one-line clap `requires`, as the report
+  prescribed, plus the dependency stated in the flag’s help.  Pinned by a CLI test asserting
+  exit 2 and that the message names `--pad-to`.
+- [x] **bug-0010 — DONE 2026-09-10 (v0.23.0)**, all three parts.  `src_page=0` and `page=0` are
+  parse errors (exit 2, before any I/O).  The pad file’s `page` is validated **up front**, so it
+  no longer depends on the document’s length modulo `--pad-to` — the latent case where a bad
+  argument waits for a differently-sized input.  Both page numbers now route through
+  `page_spec::expand` (the CLAUDE.md invariant), so the error names the flag, the file, the page
+  and the file’s real count instead of medpdf’s anonymous `Page 99 not found in source
+  document`.  The overlay check sits right after the load that already happens, so it costs no
+  second read and still fires when `target_pages` resolves to no work.  Four CLI tests, each
+  verified failing on revert.
+
+- [x] **bug-0013 — DONE 2026-09-10 (v0.23.0).**  Both probes answer three ways now
+  (present / `NotFound` / cannot-be-accessed, naming the underlying error), via
+  `symlink_metadata` — chosen over `metadata` so a broken symlink reports as itself rather than
+  borrowing its target’s absence.  Pinned by a unit test that locks a temp directory to `0o000`,
+  restores the permissions before asserting so a failure still leaves a removable tempdir, and
+  **skips loudly when run as root** rather than passing for the wrong reason.
 - [x] **bug-0017 — DONE 2026-09-10 (v0.22.0).**  `init_document` now uses `Stream::new`, which
   sets `/Length` from the content; the struct literal had opted out of it.  No other
   struct-literal `Stream` exists in the crate — checked, not assumed.  Pinned by a CLI test that
@@ -204,7 +221,10 @@ Each fix lands with a test that fails when the fix is reverted.
   the bug still in.  Verified failing on revert, with the exact `'2 0 R' is missing the Length
   entry` line the report predicted.
 
-- [ ] **bug-0015** — XMP dates not ISO 8601.
+- [x] **bug-0015 — DONE 2026-09-10 (v0.23.0).**  `to_rfc3339_opts(SecondsFormat::Secs, false)`,
+  as the report prescribed.  The test parses each of the three values back with
+  `DateTime::parse_from_rfc3339` rather than matching a shape — a hand-written pattern can
+  accept a string no conformant reader would, which is the failure being fixed.
 
 ### Phase C — ruling-dependent code (all rulings now in hand)
 
