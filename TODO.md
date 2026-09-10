@@ -13,44 +13,37 @@ gone, and `--draw-line`’s `width` now honors `units=`.  Both carry a test veri
 its own fix is reverted; bug-0002’s README row was updated in the same commit, discharging half
 the follow-up obligation below.
 
-**Phase B is CLOSED (2026-09-10, v0.23.0).**  `bug-0011`, `bug-0010`, `bug-0013` and
-`bug-0015` all landed together, each with a test verified to fail when its own fix is reverted.
+**Phase B is CLOSED (2026-09-10, v0.23.0)**, and **`bug-0003` closed the same day (v0.24.0)** —
+so **`bugs/` is empty**.  Every bug report this repo carried has been fixed and deleted.
 
-**What is next:** `bug-0003` alone — which is **not** startable here; see the medpdf note
-directly below.  With it done, `bugs/` is empty.
+**How bug-0003 closed, since it went through three repos.**  Honoring duplicate pages needed
+medpdf, so on Chris’s instruction this session handed the work to the medpdf session directly
+rather than waiting.  While preparing the hand-off it found the half nobody had: medpdf’s
+`copy_page_with_cache` appends to `/Kids` and increments `/Count` itself, so a repeated page
+came back as the **same** object listed twice — filed there as medpdf `bug-0040`, with a repro,
+and the medpdf `plan-0006` blocked on it.  medpdf 0.15.0 landed both together; this repo raised
+its floor and needed **no code change of its own** — `page_spec::expand` and `merge_pages`
+already did the right thing once the two medpdf halves were correct.
 
-**`bug-0003` is with the medpdf session as of 2026-09-10.**  Chris ruled that this session should
-hand the work over directly, so it did: medpdf now holds **`plan-0006`** (stop collapsing
-duplicates) plus a blocker this session found and filed there, **medpdf `bug-0040`** — see
-below.  The medpdf session will report a version when it releases; adopting it here means
-raising the floor, honoring duplicates in `merge_pages`, updating the README duplicates
-paragraph, and closing `bug-0003`.  Two things stand between the plan and this repo:
+**The floor of `medpdf = "0.15"` is load-bearing for correctness**, and the reason is now in
+`Cargo.toml` and `CLAUDE.md`: below it, a repeated page number does not merely lose the feature,
+it produces a malformed page tree.  Do not relax it.
 
-1. **A deconflict the plan itself asks for.**  medpdf `plan-0006` says to check with the
-   pdf-orchestrator session before starting, because _pdf-orchestrator_ `plan-0002` (dry-run
-   executes without saving) touches one of the three page-count sites that would move under
-   the parser change.  As of 2026-09-10 that plan is filed but unimplemented — no
-   implementation commits in that repo — so the two are not actually in flight together, but
-   the check is Chris’s to make, not an agent’s to skip.
-2. **A blocker the plan did not cover — now filed as medpdf `bug-0040` (2026-09-10).**  It turned
-   out not to be this repo’s problem after all, which is why it moved.  `copy_page_with_cache`
-   itself appends to `/Kids` and increments `/Count`, so the second call for a repeated page
-   returns the cached page id **and lists it a second time**: two slots, one object, produced
-   entirely inside medpdf.  Measured there with its own fixtures — both calls return `(3, 0)`
-   while `get_pages().len()` reports 2 — and the concrete harm needs no spec argument: rotating
-   only the “second” copy leaves the first with `/Rotate Some(90)`, because they are one object.
-   A two-test repro is committed at medpdf `bugs/bug-0040/repro.rs`.  **pdf-orchestrator has the
-   same exposure** through `<ImportPdf pages="1,1">`, where `apply_children_to_page` would then
-   apply one page’s children twice to one object; that repo has no session running and has not
-   been told.
+**One known limitation shipped with it**, deliberately and documented: a duplicated page that
+carries annotations shares those annotation objects, and each one’s `/P` names the first copy.
+Reproduced here against medpdf 0.15.0 and filed upstream as medpdf `bug-0041` (the medpdf
+session flagged the residual and asked whether this repo could reach it; it can).  pdf-maker
+never edits annotations, so it hands the pair on rather than corrupting anything.  If that fix
+lands, the README’s duplicates paragraph and the CHANGELOG’s known-limitation note come out.
 
-**The remaining README follow-up.**  bug-0003’s semantics are documented in README.md as
-_current behavior plus the pending change_ (the “Page Specifications” duplicates paragraph);
-the commit that lands the fix updates that paragraph in the same commit.
+**What is next:** no bugs.  The two open plans below (`plan-0001` `--lossy-text`,
+`plan-0002` `--recompress-images`) are the whole queue, and `plan-0001` is the small one —
+it is also the one the current error message begs for, since it advises “enable lossy text
+substitution” and names no flag.
 
 **Historical note — the medpdf half of the critical path (2026-09-09).**  medpdf 0.13.0 (commit
-`6208ff4`) fixed their bug-0023, bug-0024 and bug-0039; this repo is on it and the floor is
-`medpdf = "0.13"`.  What that adoption cost and uncovered:
+`6208ff4`) fixed their bug-0023, bug-0024 and bug-0039; this repo is on it.  What that adoption
+cost and uncovered:
 
 - It **broke `--booklet flip=short_edge`** — the back-page arithmetic hand-compensated the old
   contract and began double-compensating, throwing every back page clean off the sheet.  Found
@@ -59,8 +52,7 @@ the commit that lands the fix updates that paragraph in the same commit.
 - It **closed bug-0007** (orphaned streams) — verified gone from imposed output; the one
   remaining `--validate` warning is the `/ObjStm` false positive that is pdf-dump’s to fix.
 - It **opened bug-0018** — imposition sized cells from the pre-rotation MediaBox, so a
-  `/Rotate 90` source was placed upright but mis-scaled.  Fixed in v0.19.0, ahead of `--tile`,
-  which derives its grid from effective dimensions.
+  `/Rotate 90` source was placed upright but mis-scaled.  Fixed in v0.19.0, ahead of `--tile`.
 
 ## Open plans
 
@@ -80,9 +72,9 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**One** bug report lives in `bugs/` — **bug-0003**, and it is with the medpdf session (above).
-Eleven were fixed on 2026-09-09 and six more on 2026-09-10, each deleted per the bug-reports
-lifecycle.  (bug-0016 was filed
+**No bug reports live in `bugs/`.**  Eleven were fixed on 2026-09-09 and seven more on
+2026-09-10, each deleted per the bug-reports lifecycle; the IDs stay findable in git history
+(`git log --all --grep=bug-NNNN`), and are never reused.  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
 IDs are alphabetical by slug per the bug-reports rule; they encode nothing about priority.
@@ -228,12 +220,15 @@ Each fix lands with a test that fails when the fix is reverted.
 
 ### Phase C — ruling-dependent code (all rulings now in hand)
 
-- [ ] **bug-0003** implementation — needs a medpdf API change (duplicates are invisible to
-  pdf-maker today); coordinate with the sibling `../medpdf` workspace and its release flow
-  (`PUBLISHING.md`).  The medpdf half is **written and ruled**: medpdf `plan-0006`, audited by
-  the pdf-orchestrator session and marked safe to land, pending the deconflict its own text
-  asks for.  **The pdf-maker half is the `copy_page_with_cache` identity problem** — see the
-  Priority section for both, and do not adopt the parser change without the re-copy fix.
+- [x] **bug-0003 — DONE 2026-09-10 (v0.24.0).**  medpdf 0.15.0 landed both halves (its
+  `plan-0006` and its `bug-0040`, the latter filed from here); this repo raised the floor and
+  needed no code change.  Three CLI tests: duplicates honored, the out-of-range invariant
+  intact, and the copies independent — the last drawing on the second copy and asserting the
+  first is untouched, because a page count alone would have passed against the malformed shape
+  too.  Revert-checked against medpdf 0.14 extracted read-only from git history rather than by
+  moving the sibling session’s checkout: two tests fail there (`'1,1'` yields 1 page), and the
+  out-of-range guard passes on both sides **by design** — it pins something that must not
+  change.
 - [x] **bug-0008 — done**, see Phase A.  Both tests that pinned the old value were updated;
   `test_nup_spec_custom_paper` gained an explicit `orientation=portrait` so it tests unit
   conversion only, instead of silently testing conversion and orientation at once.

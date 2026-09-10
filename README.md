@@ -42,7 +42,11 @@ pdf-maker -o output.pdf report.pdf "1-5" appendix.pdf "2,4,6"
 
 **A page the spec names but the document does not contain is an error** (exit 1), never a silent drop.  `"1,99"` against a 2-page PDF fails, naming page 99 and the real page count, instead of quietly producing a 1-page PDF.  The same holds for a range past the end (`"1-100"`), an open range past the end (`"5-"`), and the `pages=` target of any drawing or overlay flag.  Use `"all"` when you mean “however many there are”.
 
-**Duplicates are collapsed, for now.**  `"1,1,2"` yields two pages, not three: a repeated page number is currently absorbed before pdf-maker sees the list.  This is a known limitation rather than a design decision — the intended behavior is to honor duplicates, which needs a change in the underlying `medpdf` page-spec API.  To repeat a page today, name the same file twice: `doc.pdf "1" doc.pdf "1"`.
+**Duplicates are honored.**  A page spec is a list of pages to emit, not a set to select, so `"1,1"` yields two copies of page 1 and `"1-2,2"` yields three pages in the order written.  Repeat a page for a facing-page layout or a duplicated insert without naming the file twice.
+
+The copies are independent page objects: a `pages=` target selects one of them, so a watermark on page 2 of `"1,1"` leaves page 1 alone.  (One current limitation: if the duplicated page carries **annotations** — links, form fields — the copies share those annotation objects.  Tracked upstream as medpdf `bug-0041`; it does not affect page content.)
+
+**Repetition is legal; out of range is not.**  The two are orthogonal: `"1,1,99"` against a 2-page document still exits 1 naming page 99.
 
 ### Blank Pages
 

@@ -1,6 +1,6 @@
 [package]
 name = "pdf-maker"
-version = "0.23.0"
+version = "0.24.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tool for merging, watermarking, and manipulating PDF files"
@@ -17,7 +17,13 @@ name = "pdf-maker"
 path = "src/main.rs"
 
 [dependencies]
-medpdf = { version = "0.14", path = "../medpdf/medpdf" }
+# Floor is 0.15 for duplicate page handling: 0.15.0 stopped `parse_page_spec`
+# collapsing repeats (its plan-0006) AND stopped `copy_page_with_cache` aliasing a
+# repeated page into one object (its bug-0040, filed from here). Both halves are
+# required — the parser change alone would hand this crate a repeated page number
+# and get back one page object listed twice, so a downgrade below 0.15 does not
+# merely lose the feature, it reopens a malformed page tree (pdf-maker bug-0003).
+medpdf = { version = "0.15", path = "../medpdf/medpdf" }
 medpdf-image = { version = "0.4", path = "../medpdf/medpdf-image" }
 lopdf = "0.42.0"
 clap = { version = "4.5.44", features = ["derive", "string"] }

@@ -5,6 +5,45 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.0] — 2026-09-10
+### Added
+- **Duplicate pages in a page spec are honored (bug-0003).**  `"1,1"` yields two
+  copies of page 1; `"1-2,2"` yields three pages in the order written.  A page
+  spec is a list of pages to emit, not a set to select — useful for a facing-page
+  layout or a duplicated insert, and previously expressible only by naming the
+  same file twice on the command line.
+
+  Before this, a repeated page number was silently absorbed: the caller asked for
+  two pages and got one, at exit 0 — the same silent-drop class v0.13.0 shipped to
+  eliminate for out-of-range pages, which had simply never been noticed for
+  duplicates.
+
+  **Repetition and out-of-range stay orthogonal.**  `"1,1,99"` against a two-page
+  document still exits 1 naming page 99.  That invariant is pinned by a test here
+  and by one in medpdf.
+
+  The copies are independent page objects, so a `pages=` target addresses exactly
+  one of them — a watermark on page 2 of `"1,1"` leaves page 1 alone.  Pinned by a
+  test that draws on the second copy and asserts the first is untouched; a page
+  count alone would prove nothing, since the malformed shape this replaced also
+  reported two pages.
+
+### Changed
+- **`medpdf` floor raised to 0.15** — required, not optional.  Honoring duplicates
+  needed two changes there: medpdf’s `plan-0006` (the parser stops collapsing
+  repeats) and medpdf’s `bug-0040` (`copy_page_with_cache` stops handing back the
+  same page object for a repeated page, which had put one object into `/Kids`
+  twice with `/Count 2`).  bug-0040 was found and filed from this repo while
+  adopting the first half.  A downgrade below 0.15 does not merely lose the
+  feature — it reopens a malformed page tree.
+
+### Known limitation
+- A duplicated page that carries **annotations** shares those annotation objects
+  between the copies, and each shared annotation’s `/P` points at the first copy.
+  pdf-maker never edits annotations itself, so it hands the pair on rather than
+  corrupting anything, and page content is unaffected.  Filed upstream as medpdf
+  `bug-0041` with a reproduction from here.
+
 ## [0.23.0] — 2026-09-10
 ### Changed
 - **BEHAVIOR CHANGE — `--pad-last-page-file` now requires `--pad-to` (bug-0011).**

@@ -1898,3 +1898,127 @@ fn cli_page_zero_is_a_usage_error() {
         );
     }
 }
+
+/// bug-0003: a page spec is a list of pages to emit, not a set to select, so
+/// `"1,1"` yields two copies of page 1. It used to yield one — `parse_page_spec`
+/// collapsed duplicates before pdf-maker ever saw the list, which is the same
+/// silent-drop class v0.13.0 shipped to eliminate for out-of-range pages.
+///
+/// Unblocked by medpdf 0.15.0, which needed BOTH halves: its plan-0006 stopped the
+/// parser collapsing repeats, and its bug-0040 (filed from this repo) stopped
+/// `copy_page_with_cache` handing back one page object for a repeated page.
+#[test]
+fn cli_duplicate_pages_are_honored() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "1,1",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(
+        pdf_dump_page_count(output.path()).expect("pdf-dump must be on PATH"),
+        2,
+        "'1,1' must emit page 1 twice"
+    );
+
+    // A range overlapping a single is the same question asked less obviously.
+    let output2 = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output2.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "1-2,2",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(pdf_dump_page_count(output2.path()).unwrap(), 3);
+}
+
+/// bug-0003's contract invariant, stated in CLAUDE.md and asked for explicitly
+/// when the medpdf change was commissioned: repetition is legal, out-of-range is
+/// not, and honoring the first must not weaken the second. `"1,1,99"` on a
+/// two-page document still exits 1 naming page 99.
+#[test]
+fn cli_duplicates_do_not_weaken_the_out_of_range_check() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "1,1,99",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("99"),
+        "the error must name page 99: {stderr}"
+    );
+    assert!(
+        stderr.contains("2 page(s)"),
+        "the error must name the real page count: {stderr}"
+    );
+}
+
+/// The property that makes duplicate pages worth having: the copies are separate
+/// page objects, so a per-page operation hits one of them. Before medpdf's
+/// bug-0040 fix, both `/Kids` entries pointed at ONE object, and drawing on the
+/// second would have drawn on the first as well.
+///
+/// This is the assertion to keep if any of these three is ever trimmed: a page
+/// count proves the pages exist, and proves nothing about whether they are two.
+#[test]
+fn cli_duplicated_pages_are_independent_objects() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 2);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "1,1",
+            // Draw only on the second copy.
+            "--draw-rect",
+            "x=10,y=10,w=100,h=50,color=red,pages=2",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let ops_on = |page: &str| -> usize {
+        let out = Command::new("pdf-dump")
+            .args([
+                output.path().to_str().unwrap(),
+                "--operators",
+                "--page",
+                page,
+            ])
+            .output()
+            .expect("pdf-dump must be on PATH");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.trim().ends_with(" re"))
+            .count()
+    };
+
+    assert_eq!(ops_on("2"), 1, "the rectangle belongs on page 2");
+    assert_eq!(
+        ops_on("1"),
+        0,
+        "page 1 must be untouched; if it has the rectangle too, the two copies are one object"
+    );
+}
