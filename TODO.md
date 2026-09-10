@@ -8,15 +8,39 @@ README.md and CLAUDE.md describe the tool again, `--watermark` and `--dry-run` g
 `--help` text they were missing, and `~/.claude/skills/pdf-tools/SKILL.md` was refreshed from
 v0.13.2 to v0.21.x.  Nothing in the queue below is blocked on anything else now.
 
-**What is next, in order:** `bug-0017` (a false `ERROR` on every imposition run — cheap, and it
-is training readers to ignore the message that would announce a real regression), then the rest
-of Phase B, then Phase C’s two ruled-but-unimplemented items (`bug-0002`, `bug-0003`).
+**`bug-0017` and `bug-0002` LANDED 2026-09-10 (v0.22.0)** — the false imposition `ERROR` is
+gone, and `--draw-line`’s `width` now honors `units=`.  Both carry a test verified to fail when
+its own fix is reverted; bug-0002’s README row was updated in the same commit, discharging half
+the follow-up obligation below.
 
-**Two of those carry a README follow-up.**  `bug-0002` (`--draw-line` `width` honors `units=`)
-and `bug-0003` (duplicate pages honored) are each documented in README.md as _current behavior
-plus the pending change_ — the “Drawing / `--draw-line`” table and the “Page Specifications”
-duplicates paragraph.  The commit that lands either fix updates its README line in the same
-commit; that obligation moved here when `bug-0012` was closed.
+**What is next, in order:** the rest of Phase B (`bug-0011`, `bug-0010`, `bug-0013`,
+`bug-0015`), then `bug-0003` — which is **not** startable here alone; see the medpdf note
+directly below.
+
+**`bug-0003` is blocked on a sibling repo, and on one sequencing question.**  Honoring duplicate
+pages needs medpdf to stop collapsing them, which is **medpdf `plan-0006`** — already written,
+ruled, consumer-audited by the pdf-orchestrator session, and marked _safe to land_.  Two things
+stand between it and this repo:
+
+1. **A deconflict the plan itself asks for.**  medpdf `plan-0006` says to check with the
+   pdf-orchestrator session before starting, because _pdf-orchestrator_ `plan-0002` (dry-run
+   executes without saving) touches one of the three page-count sites that would move under
+   the parser change.  As of 2026-09-10 that plan is filed but unimplemented — no
+   implementation commits in that repo — so the two are not actually in flight together, but
+   the check is Chris’s to make, not an agent’s to skip.
+2. **A pdf-maker-side half the plan does not cover.**  Even with duplicates preserved in the
+   parsed list, `merge_pages` feeds each page number to `medpdf::copy_page_with_cache`, whose
+   `copied_objects` map returns the **same** `ObjectId` for a repeated source page — putting one
+   page object into `/Kids` twice, which is malformed PDF (a `/Page` has a single `/Parent`).
+   Honoring duplicates therefore needs a genuine re-copy of the page object on the second and
+   later occurrences, sharing resources but not identity.  bug-0003 names this; medpdf
+   `plan-0006` does not, because it is this repo’s problem.  **Do not adopt the new medpdf
+   behavior without fixing this**, or `"1,1"` will produce a two-entry page tree pointing at one
+   object — a silent malformation, which is exactly the failure class this repo keeps closing.
+
+**The remaining README follow-up.**  bug-0003’s semantics are documented in README.md as
+_current behavior plus the pending change_ (the “Page Specifications” duplicates paragraph);
+the commit that lands the fix updates that paragraph in the same commit.
 
 **Historical note — the medpdf half of the critical path (2026-09-09).**  medpdf 0.13.0 (commit
 `6208ff4`) fixed their bug-0023, bug-0024 and bug-0039; this repo is on it and the floor is
@@ -50,8 +74,8 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Seven** bug reports live in `bugs/` — bug-0002, bug-0003, bug-0010, bug-0011, bug-0013,
-bug-0015 and bug-0017.  Eleven were fixed on 2026-09-09 and deleted per the bug-reports
+**Five** bug reports live in `bugs/` — bug-0003, bug-0010, bug-0011, bug-0013 and bug-0015.
+Eleven were fixed on 2026-09-09 and two more on 2026-09-10, each deleted per the bug-reports
 lifecycle.  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
@@ -172,21 +196,24 @@ Each fix lands with a test that fails when the fix is reverted.
   would inherit the better errors.
 - [ ] **bug-0013** — unreadable input misreported as “does not exist” (two-state probe in
   `src/paths.rs`).
-- [ ] **bug-0017** — the XMP metadata stream is built with a struct literal that bypasses
-  `lopdf::Stream::new`, so it carries no `/Length`; every imposition run logs a spurious
-  `ERROR ... missing the Length entry` because `impose_pages` round-trips through a raw
-  `save_to` that skips the `compress()` which had been repairing it.  One-line fix
-  (`src/main.rs:208`).  Worth doing early despite sitting off the critical path: a false
-  ERROR on a run that exits 0 trains both a human and an agent to ignore exactly the message
-  that would announce a real `/Length` regression — the one this repo already pins tests
-  against.  Pairs naturally with bug-0015, which is the other XMP defect.
+- [x] **bug-0017 — DONE 2026-09-10 (v0.22.0).**  `init_document` now uses `Stream::new`, which
+  sets `/Length` from the content; the struct literal had opted out of it.  No other
+  struct-literal `Stream` exists in the crate — checked, not assumed.  Pinned by a CLI test that
+  asserts **stderr carries no `ERROR`** after an `--nup` run, deliberately not an exit-code
+  assertion: the run exited 0 both before and after, so a status check would have passed with
+  the bug still in.  Verified failing on revert, with the exact `'2 0 R' is missing the Length
+  entry` line the report predicted.
+
 - [ ] **bug-0015** — XMP dates not ISO 8601.
 
 ### Phase C — ruling-dependent code (all rulings now in hand)
 
 - [ ] **bug-0003** implementation — needs a medpdf API change (duplicates are invisible to
   pdf-maker today); coordinate with the sibling `../medpdf` workspace and its release flow
-  (`PUBLISHING.md`).
+  (`PUBLISHING.md`).  The medpdf half is **written and ruled**: medpdf `plan-0006`, audited by
+  the pdf-orchestrator session and marked safe to land, pending the deconflict its own text
+  asks for.  **The pdf-maker half is the `copy_page_with_cache` identity problem** — see the
+  Priority section for both, and do not adopt the parser change without the re-copy fix.
 - [x] **bug-0008 — done**, see Phase A.  Both tests that pinned the old value were updated;
   `test_nup_spec_custom_paper` gained an explicit `orientation=portrait` so it tests unit
   conversion only, instead of silently testing conversion and orientation at once.
@@ -195,7 +222,13 @@ Each fix lands with a test that fails when the fix is reverted.
   `max_dpi=0` is a usage error naming the remedy.  The sentinel never reaches the CLI surface —
   `none` maps to 0.0 internally, so no caller has to know a magic value exists.
 - [x] **bug-0016 — done**, see Phase A.
-- [ ] **bug-0002** implementation (behavior change; note in CHANGELOG).
+- [x] **bug-0002 — DONE 2026-09-10 (v0.22.0).**  `width` converts through `unit.to_points`
+  beside the four coordinates.  The test that pinned the old value was rewritten rather than
+  deleted (the bug-0009 item-4 precedent), and two new tests pin the rule from both ends: a
+  parse-level one that also asserts a `--draw-rect` `h` and a `--draw-line` `width` of the same
+  stated thickness now agree, and a CLI-level one asserting the emitted `72 w` operator —
+  because a parse-level test cannot see a later stage re-interpreting the value.  Behavior
+  change noted in the CHANGELOG, the rule stated in `--help`, and the README row rewritten.
 - [x] **bug-0001 — done**, see Phase A.
 
 ### Phase D — cross-repo

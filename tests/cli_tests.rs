@@ -1652,3 +1652,92 @@ fn cli_tile_conflicts_with_other_imposition_modes() {
         );
     }
 }
+
+/// bug-0017: the XMP metadata stream was built with a struct literal rather than
+/// `Stream::new`, so it carried no `/Length`. Every path that ran `compress()`
+/// repaired it on the way out and hid the defect; `impose_pages` round-trips
+/// through a raw `save_to` + `load_mem`, which does not, so every imposition run
+/// logged `[ERROR lopdf::reader] stream dictionary of '2 0 R' is missing the
+/// Length entry` and still exited 0.
+///
+/// Asserting on stderr rather than on the exit code is the point: the run always
+/// succeeded, so a status assertion passes both before and after the fix. What was
+/// wrong was the false ERROR, and a false ERROR on a successful run trains a reader
+/// — human or agent — to ignore the exact message that would announce a real
+/// `/Length` regression, which this repo pins other tests against.
+#[test]
+fn cli_imposition_logs_no_length_error() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 4);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--nup",
+            "n=4",
+        ])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        !stderr.contains("missing the Length entry"),
+        "an imposition run must not log a /Length error (bug-0017); stderr was:\n{stderr}"
+    );
+    // Nothing else on the imposition path should be reporting an ERROR either.
+    assert!(
+        !stderr.contains("[ERROR"),
+        "an imposition run that exits 0 must log no ERROR (bug-0017); stderr was:\n{stderr}"
+    );
+}
+
+/// bug-0002: `--draw-line`'s `width` was stored raw while the coordinates beside it
+/// were converted, so `units=in` meant inches for the endpoints and points for the
+/// stroke. Ruled 2026-09-09: one `units=` key governs every distance in the spec.
+///
+/// Asserted at the CLI on the emitted operators, not just on the parsed struct,
+/// because the parse-level test cannot see a later stage re-interpreting the value.
+/// The pre-fix output was `1 w` beside `72 72 m` — the two numbers on the same line
+/// disagreeing about what "1 inch" meant.
+#[test]
+fn cli_draw_line_width_honors_units() {
+    let input = tempfile::NamedTempFile::new().unwrap();
+    create_test_pdf(input.path(), 1);
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = pdf_maker_bin()
+        .args([
+            "-o",
+            output.path().to_str().unwrap(),
+            input.path().to_str().unwrap(),
+            "all",
+            "--draw-line",
+            "x1=1,y1=1,x2=4,y2=1,width=1,units=in,pages=1",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let dump = Command::new("pdf-dump")
+        .args([
+            output.path().to_str().unwrap(),
+            "--operators",
+            "--page",
+            "1",
+        ])
+        .output()
+        .expect("pdf-dump must be on PATH");
+    assert!(dump.status.success());
+    let ops = String::from_utf8_lossy(&dump.stdout);
+    let width_op = ops
+        .lines()
+        .map(str::trim)
+        .find(|l| l.ends_with(" w"))
+        .expect("the line should emit a width operator");
+    assert_eq!(
+        width_op, "72 w",
+        "width=1 with units=in must emit 72pt, not 1pt (bug-0002); operators were:\n{ops}"
+    );
+}

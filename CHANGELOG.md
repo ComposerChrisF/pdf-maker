@@ -5,6 +5,46 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.22.0] — 2026-09-10
+### Changed
+- **BEHAVIOR CHANGE — `--draw-line`’s `width` now honors `units=` (bug-0002).**
+  `--draw-line "x1=1,y1=1,x2=7,y2=1,width=0.02,units=in"` draws a line 0.02
+  **inches** thick; before this release it drew 0.02 **points**, because the
+  width was stored raw while the four coordinates beside it were converted.  One
+  `units=` key now governs every distance in the spec.
+
+  This also removes an inconsistency between siblings: `--draw-rect`’s `h` plays
+  the same thickness role and has always converted, so the identical hairline
+  drawn as a rect and as a line disagreed.
+
+  **If you have a script passing `width=` together with a non-`pt` `units=`, its
+  lines will thicken.**  Nothing in the portfolio does — the checked callers use
+  `width=` with default `pt` units, which is unaffected — but a bare
+  `width=1,units=in` that meant a hairline now means a one-inch bar.
+
+### Fixed
+- **A false `ERROR` on every imposition run (bug-0017).**  `init_document` built
+  the XMP metadata stream with a struct literal instead of `Stream::new`, so the
+  stream carried no `/Length` — the one entry the PDF spec requires of every
+  stream.  Every path that ran `compress()` rewrote `/Length` on the way out and
+  hid it; `impose_pages` round-trips through a raw `save_to` + `load_mem`, which
+  does not, so `--nup`, `--booklet` and `--tile` each logged
+
+  ```
+  [ERROR lopdf::reader] stream dictionary of '2 0 R' is missing the Length entry
+  ```
+
+  and then exited 0.  The output files were always clean — the malformed object
+  only ever existed in the intermediate buffer — so this was a false alarm rather
+  than a corruption.  That is precisely why it was worth fixing: an ERROR line on
+  a successful run teaches a reader, human or agent, to ignore the exact message
+  that would announce a real `/Length` regression, which this repo pins other
+  tests against.
+
+  Pinned by a test that asserts on **stderr**, not on the exit code — the run
+  succeeded before and after, so an exit-code assertion would have passed with
+  the bug still in.
+
 ## [0.21.2] — 2026-09-09
 ### Documentation
 - **The spec-drift pass (bug-0012).**  README.md described a tool that had not

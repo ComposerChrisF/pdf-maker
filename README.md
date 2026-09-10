@@ -312,13 +312,13 @@ Three flags draw directly onto pages.  All of them share `color`, `alpha`, `page
 ### `--draw-line`
 
 ```bash
---draw-line "x1=0.5,y1=0.5,x2=8,y2=0.5,units=in,width=2,color=gray"
+--draw-line "x1=0.5,y1=0.5,x2=8,y2=0.5,units=in,width=0.02,color=gray"
 ```
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `x1`, `y1`, `x2`, `y2` | Yes | — | Endpoints, in `units` |
-| `width` | No | 1 | Line width, **always in points** — `units` does not apply to it.  This is a known defect, scheduled to change so that `width` is converted like the coordinates |
+| `width` | No | 1 | Line width, in `units` — `units` governs **every** distance in the spec, coordinates and width alike.  (Before v0.21.3 the width alone was always points, which made `units=in` mean two different things in one spec.) |
 | `color` | No | `black` | Stroke color |
 | `alpha` | No | from `color` | Opacity 0.0–1.0 |
 | `pages` | No | `all` | Which pages |

@@ -292,7 +292,8 @@ struct Args {
     #[arg(
         long,
         action = clap::ArgAction::Append,
-        help = "Draw a line. Spec keys: x1, y1, x2, y2 (required); width, color, alpha, pages, units, layer"
+        help = "Draw a line. Spec keys: x1, y1, x2, y2 (required); width, color, alpha, pages, units, layer. \
+                units= applies to EVERY distance in the spec, width included (default pt)"
     )]
     draw_line: Vec<DrawLineSpec>,
     #[arg(
@@ -448,14 +449,18 @@ pub(crate) fn init_document() -> Document {
         "Type" => "Metadata",
         "Subtype" => "XML",
     };
+    // `Stream::new`, never the struct literal: the constructor is what sets
+    // `/Length` from the content, and bypassing it built a stream whose dictionary
+    // lacked the one entry the PDF spec requires of every stream (bug-0017). It was
+    // invisible for as long as every path ran `compress()`, which rewrites `/Length`
+    // on the way out — until `impose_pages` began round-tripping through a raw
+    // `save_to` + `load_mem`, which reported it as an ERROR on every imposition run.
     doc.objects.insert(
         metadata_id,
-        Object::Stream(Stream {
-            dict: metadata,
-            content: format_xmp_metadata(&doc_uuid).into_bytes(),
-            allows_compression: true,
-            start_position: None,
-        }),
+        Object::Stream(Stream::new(
+            metadata,
+            format_xmp_metadata(&doc_uuid).into_bytes(),
+        )),
     );
     let catalog_id = doc.add_object(dictionary! {
         "Type" => "Catalog",

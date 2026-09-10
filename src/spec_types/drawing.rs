@@ -249,7 +249,13 @@ impl FromStr for DrawLineSpec {
             y1: unit.to_points(y1),
             x2: unit.to_points(x2),
             y2: unit.to_points(y2),
-            width,
+            // `width` is a distance, so `units=` governs it exactly like the
+            // coordinates (bug-0002, ruled 2026-09-09). It used to be stored raw,
+            // which made `units=in` mean inches for the endpoints and points for the
+            // stroke — and left `--draw-line` inconsistent with `--draw-rect`, whose
+            // `h` plays the same thickness role and always converted. One `units=`
+            // key governs every length in the spec.
+            width: unit.to_points(width),
             color: final_color,
             pages,
             layer_over,
@@ -793,9 +799,43 @@ mod tests {
         assert!((spec.y1 - 144.0).abs() < f32::EPSILON);
         assert!((spec.x2 - 216.0).abs() < f32::EPSILON);
         assert!((spec.y2 - 288.0).abs() < f32::EPSILON);
-        assert!((spec.width - 2.5).abs() < f32::EPSILON);
+        // 2.5in = 180pt. This assertion read `2.5` until bug-0002 was fixed: the
+        // width was stored raw while the coordinates beside it converted. Rewritten
+        // rather than deleted, so the file still records which behavior changed.
+        assert!((spec.width - 180.0).abs() < f32::EPSILON);
         assert_eq!(spec.pages, "1");
         assert!(!spec.layer_over);
+    }
+
+    /// bug-0002: one `units=` key governs every distance in the spec. Pinned
+    /// separately from the full-spec test so the intent is legible on its own, and
+    /// checked against `--draw-rect`, whose `h` is the same kind of thickness and
+    /// has always converted — the inconsistency between the two siblings was the
+    /// defect, so a test that only checked the line could drift back.
+    #[test]
+    fn test_draw_line_width_honors_units() {
+        let line = DrawLineSpec::from_str("x1=0,y1=0,x2=1,y2=0,width=0.02,units=in").unwrap();
+        assert!(
+            (line.width - 1.44).abs() < 0.001,
+            "0.02in must be 1.44pt, got {}",
+            line.width
+        );
+
+        // Default units are points, so an unqualified width is unchanged.
+        let pt = DrawLineSpec::from_str("x1=0,y1=0,x2=1,y2=0,width=0.02").unwrap();
+        assert!((pt.width - 0.02).abs() < f32::EPSILON);
+
+        // mm and cm convert too — the rule is about `units=`, not about inches.
+        let mm = DrawLineSpec::from_str("x1=0,y1=0,x2=1,y2=0,width=1,units=mm").unwrap();
+        assert!((mm.width - 2.8346).abs() < 0.01, "1mm must be ~2.83pt");
+
+        // The sibling key that always converted, for comparison: a 0.02in-thick
+        // rect and a 0.02in-thick line must now agree.
+        let rect = DrawRectSpec::from_str("x=0,y=0,w=1,h=0.02,units=in").unwrap();
+        assert!(
+            (rect.h - line.width).abs() < 0.001,
+            "a rect's h and a line's width are the same thickness in the same units"
+        );
     }
 
     #[test]
