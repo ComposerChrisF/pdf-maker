@@ -142,6 +142,85 @@ Examples:
 Conflicts with --nup.
 ";
 
+/// Long help for `--watermark`.
+///
+/// Drift-guarded by `watermark_help_documents_every_key`, like the imposition
+/// flags. The escape table is here because `--help` is the tool's own interface
+/// surface: before this, the only description of `\n` and `\u` lived in an
+/// external skill file, outside the repo that defines them (bug-0012).
+const WATERMARK_HELP: &str = "\
+Draw text on the page, over or under its content.
+
+Spec keys (comma-separated key=value):
+  text       The text to draw. Required. Escapes below.
+  font       @Name for a PDF built-in (@Helvetica, @Courier, @Times-Roman,
+             @Symbol, @ZapfDingbats), a system font name (Arial), or a path to
+             a .ttf/.otf file. Required.
+  x, y       Position, in `units`. Required.
+  size       Font size in points. Default 48.
+  units      pt | in | mm | cm. Default in. (The --draw-* flags default to pt.)
+  pages      Which pages. Default all. After an imposition flag this addresses
+             output SHEETS, not source pages.
+  color      Named or hex. Default black. Names: black, white, red, blue, green,
+             yellow, cyan, magenta, orange, purple, gray/grey. Hex: #RGB,
+             #RRGGBB, #RRGGBBAA; the # is optional.
+  alpha      0.0 (transparent) to 1.0 (opaque). Overrides any alpha in color.
+  rotation   Degrees. Default 0.
+  h_align    left | center | right — the horizontal anchor at x. Default left.
+  v_align    top | cap_top | center | baseline | descent_bottom | bottom — the
+             vertical anchor at y. Default baseline.
+  strikeout  true | false. Default false.
+  underline  true | false. Default false.
+  weight     thin | extra_light | light | normal | medium | semi_bold | bold |
+             extra_bold | black, or a number 1-1000. Selects among the faces of
+             an embedded family. Default normal.
+  style      normal | italic | oblique. Default normal.
+  layer      over | under. Default over.
+
+TEXT ESCAPES in `text`:
+  \\,          a literal comma (commas otherwise separate keys)
+  \\n          a line break — see below
+  \\\\          a literal backslash
+  \\uXXXX      a Unicode character, 4 hex digits (BMP)
+  \\U{XXXXX}   a Unicode character, 1-6 hex digits (full range)
+  Any other \\X is left as-is. A value may also be double-quoted, in which case
+  commas inside the quotes are literal.
+
+  `\\n` AND `\\t` ARE NOT A PAIR. `\\n` renders: the text is split on newlines and
+  each line is drawn on its own baseline, leading taken from the embedded face
+  (or 1.2 x the font size for a built-in), and a trailing newline yields a
+  trailing empty line. `\\t` does NOT render: there is no tab-stop model, so a
+  decoded tab is dropped or refused depending on the text path. There is no
+  wrapping or truncation, and leading is not settable.
+
+Examples:
+  --watermark \"text=DRAFT,font=@Helvetica,size=72,x=2,y=5,units=in\"
+  --watermark \"text=Line 1\\nLine 2,font=Arial,x=1,y=1,units=in,h_align=center\"
+  --watermark \"text=CONFIDENTIAL,font=@Courier,x=1,y=1,units=in,layer=under,alpha=0.3\"
+";
+
+/// Long help for `--dry-run`.
+///
+/// States the contract precisely: the flag branches at exactly one place, the
+/// save. \"Full validation pass\" overstated it, because the save is where the
+/// `lopdf_save_modern_bug.rs` failure class lives (bug-0012).
+const DRY_RUN_HELP: &str = "\
+Run the whole pipeline but write no output file (exit 0 on success).
+
+Merge, imposition, overlays, drawing commands, font subsetting, padding and
+every encryption parameter all run against the real document; only the SAVE is
+skipped. So a dry run catches a bad spec, a missing input, an out-of-range page,
+an unrepresentable character, or a runaway tile count.
+
+What it CANNOT catch is a failure inside the save itself: compression, the
+application of encryption, and the file write. A document that passes --dry-run
+can still fail to be written.
+
+The single branch is deliberate: a dry run and a real run agree about geometry
+by construction because there is no second code path. Do not turn --dry-run into
+a simulation.
+";
+
 const EXIT_STATUS_HELP: &str = "EXIT STATUS:
     0  Success -- the output was written.  Also returned by --dry-run, which
        validates and runs the whole pipeline but writes no file.
@@ -200,7 +279,8 @@ struct Args {
     #[arg(
         long,
         action = clap::ArgAction::Append,
-        help = "Add text watermark. Spec keys: text, font, x, y (required); size, units, pages, color, alpha, rotation, h_align, v_align, layer, strikeout, underline, weight, style"
+        help = "Add text watermark. Spec keys: text, font, x, y (required); size, units, pages, color, alpha, rotation, h_align, v_align, layer, strikeout, underline, weight, style",
+        long_help = WATERMARK_HELP
     )]
     watermark: Vec<WatermarkSpec>,
     #[arg(
@@ -260,7 +340,8 @@ struct Args {
     tile: Option<TileSpec>,
     #[arg(
         long,
-        help = "Validate and run the whole pipeline but write no output file (exit 0 on success)"
+        help = "Run the whole pipeline but write no output file (exit 0 on success)",
+        long_help = DRY_RUN_HELP
     )]
     dry_run: bool,
     #[arg(
@@ -915,8 +996,8 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
 
 #[cfg(test)]
 mod help_tests {
-    use super::{BOOKLET_HELP, NUP_HELP, TILE_HELP};
-    use crate::spec_types::{BOOKLET_KEYS, NUP_KEYS, TILE_KEYS};
+    use super::{BOOKLET_HELP, NUP_HELP, TILE_HELP, WATERMARK_HELP};
+    use crate::spec_types::{BOOKLET_KEYS, NUP_KEYS, TILE_KEYS, WATERMARK_KEYS};
 
     /// Whole-word membership: splits on anything that cannot appear in a spec key,
     /// so `n` matches the standalone `n` entry without also matching the `n` inside
@@ -946,6 +1027,19 @@ mod help_tests {
             assert!(
                 documents(TILE_HELP, key),
                 "--tile help does not document the key '{key}'"
+            );
+        }
+    }
+
+    /// The watermark help carries the same obligation as the imposition flags:
+    /// it is the tool's own interface surface, and a key documented only in an
+    /// external skill file is a key that will drift (bug-0012).
+    #[test]
+    fn watermark_help_documents_every_key() {
+        for key in WATERMARK_KEYS {
+            assert!(
+                documents(WATERMARK_HELP, key),
+                "--watermark help does not document the key '{key}' (bug-0012)"
             );
         }
     }

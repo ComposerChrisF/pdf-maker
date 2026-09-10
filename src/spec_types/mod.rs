@@ -18,5 +18,7 @@ pub use layout::{
 // needs them — `layout.rs` uses the constants directly — so gate the re-export
 // and keep non-test builds warning-free.
 #[cfg(test)]
+pub use drawing::WATERMARK_KEYS;
+#[cfg(test)]
 pub use layout::{BOOKLET_KEYS, NUP_KEYS, TILE_KEYS};
 pub use misc::{BlankPageSpec, OverlaySpec, PadFileSpec, PadToSpec};

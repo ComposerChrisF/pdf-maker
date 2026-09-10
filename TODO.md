@@ -2,27 +2,35 @@
 
 ## Priority right now
 
-**`plan-0003` (`--tile`) is the top priority.**  Everything below is ordered around getting it
-landed safely rather than around bug severity, which is a deliberate change from the
-2026-07-16 ordering.  Four pdf-maker bug reports sit on the imposition path `--tile` extends —
-three are true prerequisites and one is not, contrary to the plan’s first draft — and **two
-_medpdf_ bugs sit under it**, on the `place_page` primitive imposition is built from.  All are
-gathered into **Phase 0** below and should be worked first.
+**`plan-0003` (`--tile`) has LANDED (2026-09-09, v0.21.0), and so has the documentation pass
+that waited on it (`bug-0012`, v0.21.2).**  The banner-printing arc is closed: `--tile` ships,
+README.md and CLAUDE.md describe the tool again, `--watermark` and `--dry-run` gained the
+`--help` text they were missing, and `~/.claude/skills/pdf-tools/SKILL.md` was refreshed from
+v0.13.2 to v0.21.x.  Nothing in the queue below is blocked on anything else now.
 
-**The medpdf half of the critical path has LANDED (2026-09-09).**  medpdf 0.13.0 (commit
-`6208ff4`) fixes their bug-0023, bug-0024 and bug-0039; this repo is on it, the floor is raised
-to `medpdf = "0.13"`, and all 41 tests pass.  What that adoption cost and uncovered:
+**What is next, in order:** `bug-0017` (a false `ERROR` on every imposition run — cheap, and it
+is training readers to ignore the message that would announce a real regression), then the rest
+of Phase B, then Phase C’s two ruled-but-unimplemented items (`bug-0002`, `bug-0003`).
+
+**Two of those carry a README follow-up.**  `bug-0002` (`--draw-line` `width` honors `units=`)
+and `bug-0003` (duplicate pages honored) are each documented in README.md as _current behavior
+plus the pending change_ — the “Drawing / `--draw-line`” table and the “Page Specifications”
+duplicates paragraph.  The commit that lands either fix updates its README line in the same
+commit; that obligation moved here when `bug-0012` was closed.
+
+**Historical note — the medpdf half of the critical path (2026-09-09).**  medpdf 0.13.0 (commit
+`6208ff4`) fixed their bug-0023, bug-0024 and bug-0039; this repo is on it and the floor is
+`medpdf = "0.13"`.  What that adoption cost and uncovered:
 
 - It **broke `--booklet flip=short_edge`** — the back-page arithmetic hand-compensated the old
   contract and began double-compensating, throwing every back page clean off the sheet.  Found
   by the pdf-orchestrator and medpdf sessions sweeping for the pattern, fixed here, and pinned
-  by a test that fails when reverted.  Details in CHANGELOG under Unreleased.
+  by a test that fails when reverted.
 - It **closed bug-0007** (orphaned streams) — verified gone from imposed output; the one
   remaining `--validate` warning is the `/ObjStm` false positive that is pdf-dump’s to fix.
-- It **opened bug-0018** — imposition still sizes cells from the pre-rotation MediaBox, so a
-  `/Rotate 90` source is now placed upright but mis-scaled.  This is a `--tile` prerequisite:
-  `--tile` derives its _grid_ from effective dimensions, so getting it wrong yields the wrong
-  sheet count.
+- It **opened bug-0018** — imposition sized cells from the pre-rotation MediaBox, so a
+  `/Rotate 90` source was placed upright but mis-scaled.  Fixed in v0.19.0, ahead of `--tile`,
+  which derives its grid from effective dimensions.
 
 ## Open plans
 
@@ -30,13 +38,6 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 `~/.claude/rules/plan-files.md`.  TODO.md is the ordering index for plans as well as bugs;
 **the order below _is_ a priority ruling**, unlike the 2026-08-12 note it replaces.
 
-- [ ] **plan-0003 — `--tile`: split one large page across many sheets, with overlap.**  Filed
-  2026-09-09 from the Publisher retirement review.  Publisher goes away 2026-10-01 and takes
-  tiled banner printing with it; PowerPoint has no tiled printing at all, and Affinity has it
-  but re-introduces the single-vendor-format dependency the migration exists to escape.
-  `--tile` is the **inverse of `--nup`** and shares its cell arithmetic, which is why it
-  belongs here.  Prerequisites are Phase 0 below.  Not blocking 1 October: the existing banner
-  PDF is already tiled; what is lost is re-tiling a changed one.
 - [ ] **plan-0001 — `--lossy-text`**, exposing medpdf’s existing `WatermarkParams::lossy_text`
   opt-out.  Small: one flag, no medpdf change for the stderr-warning form.  Worth doing early
   because the current error message advises “enable lossy text substitution” and names no
@@ -49,8 +50,8 @@ Proposed changes — options, not obligations — in `plans/`, numbered per
 
 ## Bug-fix queue
 
-**Eight** bug reports live in `bugs/` — bug-0002, bug-0003, bug-0010 through bug-0013,
-bug-0015 and bug-0017.  Ten were fixed on 2026-09-09 and deleted per the bug-reports
+**Seven** bug reports live in `bugs/` — bug-0002, bug-0003, bug-0010, bug-0011, bug-0013,
+bug-0015 and bug-0017.  Eleven were fixed on 2026-09-09 and deleted per the bug-reports
 lifecycle.  (bug-0016 was filed
 2026-07-23, after the original deep review, and was missing from this index until 2026-09-09;
 bug-0017 was filed 2026-09-09 from the plan-0003 prerequisite review.)
@@ -189,8 +190,10 @@ Each fix lands with a test that fails when the fix is reverted.
 - [x] **bug-0008 — done**, see Phase A.  Both tests that pinned the old value were updated;
   `test_nup_spec_custom_paper` gained an explicit `orientation=portrait` so it tests unit
   conversion only, instead of silently testing conversion and orientation at once.
-- [ ] **bug-0009 item 4** implementation — `max_dpi=none` as the public spelling, numeric
-  values below 1.0 rejected, `test_draw_image_spec_max_dpi_zero` rewritten rather than deleted.
+- [x] **bug-0009 item 4 — DONE 2026-09-09**, with the rest of bug-0009 in v0.18.0; this entry
+  was stale bookkeeping, corrected 2026-09-09.  Verified at the CLI: `max_dpi=none` parses,
+  `max_dpi=0` is a usage error naming the remedy.  The sentinel never reaches the CLI surface —
+  `none` maps to 0.0 internally, so no caller has to know a magic value exists.
 - [x] **bug-0016 — done**, see Phase A.
 - [ ] **bug-0002** implementation (behavior change; note in CHANGELOG).
 - [x] **bug-0001 — done**, see Phase A.
@@ -203,18 +206,31 @@ Each fix lands with a test that fails when the fix is reverted.
 
 ### Phase E — documentation (last, once behavior settles)
 
-- [ ] **bug-0012** — the big spec-drift pass over README.md and CLAUDE.md (imposition wholly
-  undocumented, `--blank-page`/`--no-subset`/encryption flags missing, watermark
-  units/params/colors incomplete, pipeline diagrams missing the imposition phase, CLAUDE.md’s
-  stale `spec_types.rs` tree entry).  Doc-only; written last so it describes the settled
-  behavior, including the Phase A rulings **and `--tile`** — hence Phase 0’s instruction to land
-  `--tile` before this.  Note while here: CLAUDE.md’s “5-Phase Processing Pipeline” omits
-  imposition entirely, though it runs between merge and overlays (`src/main.rs:601`).
-- [ ] After release: refresh `~/.claude/skills/pdf-tools/SKILL.md` (outside this repo).  It was
-  brought up to v0.13.2 with the imposition tables on 2026-09-09; `--tile` and the Phase A
-  rulings will need another pass.  **Name `\t` specifically when it happens:** the skill’s
-  “Text escaping” line lists `\n` and `\t` together, which became half true when medpdf
-  0.14.0 made `\n` render and left `\t` with no tab-stop model.
+- [x] **bug-0012 — DONE 2026-09-09 (v0.21.2).**  The spec-drift pass over README.md and
+  CLAUDE.md, written last exactly as planned, so it describes settled behavior including every
+  Phase A ruling and `--tile`.  README gained sections for imposition (all three modes, with the
+  `flip`-by-orientation table and the tile guards), blank pages, drawing (`--draw-rect`,
+  `--draw-line`, `--draw-image` — previously undocumented in full), `--no-subset`, the complete
+  watermark parameter table, the full named-color set, the text escapes, the real encryption
+  flags with their password gate, a corrected `--json` sample, and a seven-phase pipeline.
+  CLAUDE.md gained the `src/spec_types/` tree, the seven-phase pipeline with the
+  imposition-slot consequence, and three new contract invariants.
+  **Scope went one step past doc-only, deliberately:** two of the report’s items asked for
+  `--help` text, not just README — so `--watermark` gained a `long_help` (keys, colors, escapes)
+  and `--dry-run` gained one stating the single-branch contract.  The watermark help is
+  drift-guarded against `WATERMARK_KEYS` by a new test, the same mechanism bug-0005 built.
+  Two items could not settle, and their obligation moved to the Priority section above: the
+  `bug-0002` and `bug-0003` behaviors are documented as current-plus-pending, and each fixing
+  commit owes its README line.
+- [x] **DONE 2026-09-09:** `~/.claude/skills/pdf-tools/SKILL.md` (outside this repo) refreshed
+  from v0.13.2 to v0.21.1 — a `--tile` key table, the corrected `--nup` `n` set and side-by-side
+  `n=2`, the `flip`-by-orientation table with its pre-v0.16.0 warning, the encryption password
+  gate, the extended color set, the derived-geometry `--json` fields, and the precise
+  `--dry-run` contract.  `\t` was named specifically, as instructed: the “Text escaping” line no
+  longer pairs it with `\n`, and says outright that `\n` renders and `\t` has no tab-stop model.
+  Its stale provenance note — “`--help` is wrong about the keys, transcribe from source” — was
+  corrected too: pdf-maker’s help is drift-guarded now, so `--help` wins and this file is the
+  one that goes stale.  Version stamps updated.
 
 ### Sequencing rationale
 

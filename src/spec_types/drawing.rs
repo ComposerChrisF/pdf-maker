@@ -30,7 +30,10 @@ pub struct WatermarkSpec {
     pub style: FontStyle,
 }
 
-const WATERMARK_KEYS: &[&str] = &[
+/// The `--watermark` spec keys. `pub` so the `--help` drift guard in `main.rs`
+/// can assert against this list rather than a copy of it (bug-0005's mechanism,
+/// extended to the watermark help by bug-0012).
+pub const WATERMARK_KEYS: &[&str] = &[
     "text",
     "font",
     "size",

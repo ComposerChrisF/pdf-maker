@@ -5,6 +5,43 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.21.2] — 2026-09-09
+### Documentation
+- **The spec-drift pass (bug-0012).**  README.md described a tool that had not
+  existed since v0.10.0: imposition was wholly absent, and so were `--draw-rect`,
+  `--draw-line`, `--draw-image`, `--blank-page`, `--no-subset`, half the
+  watermark parameters, five of the eleven named colors, and every encryption
+  flag but the two passwords.  It now documents all of them, plus `--nup`,
+  `--booklet` and `--tile` with their key tables, the `flip`-by-orientation
+  table, the tile coverage guards, the text escapes, a `--json` sample taken
+  from a real run, and a seven-phase pipeline (it claimed five, omitting
+  imposition and font subsetting).
+
+  Two behaviors are documented as **current plus pending**, because their fixes
+  are ruled but unlanded: `--draw-line` `width` is in points regardless of
+  `units=` (bug-0002), and duplicate page numbers collapse (bug-0003).  The
+  commit that lands either fix owes its README line.
+
+### Added
+- **`--watermark` and `--dry-run` gained `long_help`.**  Two of bug-0012’s items
+  were about `--help`, not the README.  The watermark help now carries the full
+  key table with defaults, the named-color set, and the **text escapes** — which
+  had never been documented in this repo at all; the only description of them
+  lived in an external skill file, outside the tool that defines them.  It says
+  plainly that `\n` renders and `\t` does not: they decode alike, and only one
+  has a rendering model.
+- A drift guard for the watermark help, asserting it against `WATERMARK_KEYS`
+  rather than a copy of the list — the mechanism bug-0005 built for the
+  imposition flags, now covering four flags instead of three.
+
+### Changed
+- `--dry-run`’s help no longer says “validate”, which overstated it.  The flag
+  branches at exactly one place, the save, so it runs the whole pipeline against
+  the real document and skips compression, the application of encryption, and
+  the file write — the failure class `lopdf_save_modern_bug.rs` guards.  A
+  document that passes `--dry-run` can still fail to be written, and the help
+  now says so.
+
 ## [0.21.1] — 2026-09-09
 ### Changed
 - Build hygiene: removed the dead `window_w` and `src_w` fields from `TilePlan`
