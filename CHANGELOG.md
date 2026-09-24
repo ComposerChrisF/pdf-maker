@@ -5,6 +5,13 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.1] — 2026-09-23
+### Changed
+- `--draw-rect --help` gains a `long_help` note: an opaque rectangle is not a redaction — the
+  text beneath stays in the content stream and any text extraction recovers it, so text meant to
+  be kept from a reader should be extracted and redacted with `id-redact` instead.  No behavior
+  change.
+
 ## [0.24.0] — 2026-09-10
 ### Added
 - **Duplicate pages in a page spec are honored (bug-0003).**  `"1,1"` yields two

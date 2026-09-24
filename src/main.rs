@@ -286,7 +286,12 @@ struct Args {
     #[arg(
         long,
         action = clap::ArgAction::Append,
-        help = "Draw a rectangle. Spec keys: x, y, w, h (required); color, alpha, pages, units, layer"
+        help = "Draw a rectangle. Spec keys: x, y, w, h (required); color, alpha, pages, units, layer",
+        long_help = "Draw a rectangle. Spec keys: x, y, w, h (required); color, alpha, pages, units, layer\n\n\
+            NOT A REDACTION: an opaque rectangle hides text from the eye only. The text beneath \
+            stays in the page's content stream, and any text extraction (pdf-dump --text, copy and \
+            paste, an AI reading the file) recovers it. To keep text from a reader, extract the text \
+            and redact that (id-redact); pdf-maker has no redaction."
     )]
     draw_rect: Vec<DrawRectSpec>,
     #[arg(
