@@ -1,6 +1,6 @@
 [package]
 name = "pdf-maker"
-version = "0.24.1"
+version = "0.24.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tool for merging, watermarking, and manipulating PDF files"
@@ -8,7 +8,7 @@ repository = "https://github.com/ComposerChrisF/pdf-maker"
 keywords = ["pdf", "merge", "watermark", "cli"]
 categories = ["command-line-utilities"]
 # Working-tree artifacts, not part of the published crate.  bugs/ and plans/ are
-# delete-on-resolve directories (~/.claude/rules/bug-reports.md, plan-files.md);
+# delete-on-resolve directories (the house bug-report and plan conventions);
 # without this they ship in the tarball.
 exclude = ["CLAUDE.md", ".github/", ".claude/", "bugs/", "plans/"]
 

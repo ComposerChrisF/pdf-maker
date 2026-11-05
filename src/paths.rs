@@ -1,4 +1,4 @@
-//! Path-contract checks, per `~/.claude/rules/cli-exit-codes.md`
+//! Path-contract checks, per the house rule on exit codes,
 //! § Input and Output Paths.
 //!
 //! Two rules, both enforced before any work begins so a bad path costs nothing:

@@ -5,6 +5,11 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.2] — 2026-11-04
+### Changed
+- Comments, module docs, and project docs no longer point into a private home folder; they
+  name the convention in words instead.  No behavior change.
+
 ## [0.24.1] — 2026-09-23
 ### Changed
 - `--draw-rect --help` gains a `long_help` note: an opaque rectangle is not a redaction — the

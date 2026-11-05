@@ -5,7 +5,7 @@
 **`plan-0003` (`--tile`) has LANDED (2026-09-09, v0.21.0), and so has the documentation pass
 that waited on it (`bug-0012`, v0.21.2).**  The banner-printing arc is closed: `--tile` ships,
 README.md and CLAUDE.md describe the tool again, `--watermark` and `--dry-run` gained the
-`--help` text they were missing, and `~/.claude/skills/pdf-tools/SKILL.md` was refreshed from
+`--help` text they were missing, and the global `pdf-tools` skill was refreshed from
 v0.13.2 to v0.21.x.  Nothing in the queue below is blocked on anything else now.
 
 **`bug-0017` and `bug-0002` LANDED 2026-09-10 (v0.22.0)** — the false imposition `ERROR` is
@@ -57,7 +57,7 @@ cost and uncovered:
 ## Open plans
 
 Proposed changes — options, not obligations — in `plans/`, numbered per
-`~/.claude/rules/plan-files.md`.  TODO.md is the ordering index for plans as well as bugs;
+the house plan convention.  TODO.md is the ordering index for plans as well as bugs;
 **the order below _is_ a priority ruling**, unlike the 2026-08-12 note it replaces.
 
 - [ ] **plan-0001 — `--lossy-text`**, exposing medpdf’s existing `WatermarkParams::lossy_text`
@@ -270,7 +270,7 @@ Each fix lands with a test that fails when the fix is reverted.
   Two items could not settle, and their obligation moved to the Priority section above: the
   `bug-0002` and `bug-0003` behaviors are documented as current-plus-pending, and each fixing
   commit owes its README line.
-- [x] **DONE 2026-09-09:** `~/.claude/skills/pdf-tools/SKILL.md` (outside this repo) refreshed
+- [x] **DONE 2026-09-09:** the global `pdf-tools` skill (outside this repo) refreshed
   from v0.13.2 to v0.21.1 — a `--tile` key table, the corrected `--nup` `n` set and side-by-side
   `n=2`, the `flip`-by-orientation table with its pre-v0.16.0 warning, the encryption password
   gate, the extended color set, the derived-geometry `--json` fields, and the precise

@@ -11,7 +11,7 @@
 //!
 //! A page a caller explicitly named but the document does not contain is a
 //! caller-claim/world mismatch (the same shape as a nonexistent input path), so
-//! it is a **tool error, exit 1** — see `~/.claude/rules/cli-exit-codes.md`
+//! it is a **tool error, exit 1** — see the house rule on exit codes,
 //! § Input and Output Paths.  It is not a clap usage error (2): the argument is
 //! syntactically valid, and only the loaded document can contradict it.
 

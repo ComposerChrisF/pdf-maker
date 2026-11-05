@@ -747,7 +747,7 @@ fn cli_overlay_targeting_a_nonexistent_page_errors() {
     assert!(!output.exists());
 }
 
-// --- Path contract (~/.claude/rules/cli-exit-codes.md) ---
+// --- Path contract (the house rule on exit codes) ---
 
 #[test]
 fn cli_missing_output_directory_errors_and_is_not_created() {
