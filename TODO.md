@@ -69,6 +69,10 @@ the house plan convention.  TODO.md is the ordering index for plans as well as b
   `medpdf_image::recompress::recompress_images()`.  Larger, and the scoping design is the hard
   part — pdf-orchestrator shipped the same feature and carries two open bugs on exactly that
   (bug-0037 scope, bug-0035 junk-enables-lossy).  Read those before implementing.
+- [ ] **plan-0005 — `paper=tabloid`**, an 11×17in named size for `--booklet`, `--nup`,
+  `--tile`, and `--blank-page`.  Small: one `parse_paper_size` arm, two tests that assert
+  rejection turned into acceptance, and help text.  Filed 6-Nov-2026 after
+  `--booklet "paper_w=11,paper_h=17"` silently laid letter pages into 5.5×17in halves.
 
 ## Bug-fix queue
 
