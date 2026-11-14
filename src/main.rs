@@ -501,7 +501,7 @@ fn merge_pages(
     input_report: &mut Vec<Value>,
 ) -> Result<(), MedpdfError> {
     eprintln!("\n--- Merging Pages ---");
-    for input_chunk in inputs.chunks_exact(2) {
+    for input_chunk in inputs.as_chunks::<2>().0 {
         let source_path = &input_chunk[0];
         let spec = &input_chunk[1];
         eprintln!("Processing '{}' with pages '{}'...", source_path, spec);
@@ -862,7 +862,7 @@ fn main() {
 /// nothing and -- crucially -- never yields a plausible-but-wrong output.
 fn check_paths(args: &Args) -> Result<(), MedpdfError> {
     paths::check_output_path(&args.output)?;
-    for chunk in args.inputs.chunks_exact(2) {
+    for chunk in args.inputs.as_chunks::<2>().0 {
         paths::check_input_file(Path::new(&chunk[0]), "input PDF")?;
     }
     for spec in &args.overlay {

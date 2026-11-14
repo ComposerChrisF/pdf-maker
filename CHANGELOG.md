@@ -5,6 +5,11 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.3] — 2026-11-13
+### Changed
+- Rust 1.100 upkeep: `chunks_exact(2)` is now `as_chunks::<2>().0` at the two sites clippy's
+  `chunks_exact_to_as_chunks` lint flags.  No behavior change.
+
 ## [0.24.2] — 2026-11-04
 ### Changed
 - Comments, module docs, and project docs no longer point into a private home folder; they
