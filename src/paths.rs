@@ -123,6 +123,7 @@ mod tests {
     fn unreadable_input_reports_access_not_absence() {
         use std::os::unix::fs::PermissionsExt;
 
+        // SAFETY: geteuid takes no arguments, cannot fail, and touches no memory of ours.
         if unsafe { libc_geteuid() } == 0 {
             eprintln!("skipping: running as root, which bypasses directory permissions");
             return;

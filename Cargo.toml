@@ -1,6 +1,6 @@
 [package]
 name = "pdf-maker"
-version = "0.24.3"
+version = "0.24.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CLI tool for merging, watermarking, and manipulating PDF files"
@@ -34,3 +34,24 @@ serde_json = "1.0.149"
 
 [dev-dependencies]
 tempfile = "3"
+
+# house-lints v1 (2026-11-14) — the [lints] table, to paste into Cargo.toml.
+# A single crate: paste as is.  A workspace: rename the table to
+# [workspace.lints.clippy] in the root manifest, and put `[lints] workspace = true`
+# in each member.  Every level is "warn": existing violations do not block, and
+# review refuses new ones.  The canonical copy lives in Chris's coding hub, under
+# house-lints/.
+
+[lints.clippy]
+# Every suppression says why, and an #[expect] warns once its lint stops firing.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+# No panics on input in production code (tests are allowed by clippy.toml).
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+# Each of these caught a filed bug in the 2026-11-14 census.
+string_slice = "warn"
+let_underscore_must_use = "warn"
+undocumented_unsafe_blocks = "warn"
+# disallowed_methods is on by default; its list is clippy.toml.

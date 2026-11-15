@@ -4,6 +4,10 @@
 //! end-to-end behavior: argument parsing, pipeline execution, and output validity.
 //!
 //! Tests that verify PDF content use `pdf-dump --json` for inspection.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests build and assert on fixtures in a temp dir"
+)]
 
 use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use std::path::Path;

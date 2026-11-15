@@ -1059,6 +1059,10 @@ fn run(args: &Args) -> Result<Value, MedpdfError> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::string_slice,
+    reason = "slices at indices `find` returned for ASCII needles and a closing quote, which are character boundaries"
+)]
 mod xmp_tests {
     use super::format_xmp_metadata;
 
