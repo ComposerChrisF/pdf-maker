@@ -5,6 +5,12 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.4] — 2026-11-14
+### Changed
+- Adopts a shared lint set: `clippy.toml`, a `[lints.clippy]` table in `Cargo.toml`, reasoned
+  `#[expect]` attributes in the tests, and a `// SAFETY:` comment on one `unsafe` block.  The lints
+  flagged a panic on a non-ASCII `color=` value, filed as bug-0019.  No behavior change.
+
 ## [0.24.3] — 2026-11-13
 ### Changed
 - Rust 1.100 upkeep: `chunks_exact(2)` is now `as_chunks::<2>().0` at the two sites clippy's
