@@ -168,6 +168,10 @@ pub(super) fn unescape_text(s: &str) -> Result<String, String> {
 /// Supports named colors (`black`, `white`, `red`, `blue`, `green`, `yellow`, `cyan`,
 /// `magenta`, `orange`, `purple`, `gray`/`grey`) and hex formats (`#RGB`, `#RRGGBB`,
 /// `#RRGGBBAA`) with or without the `#` prefix.
+#[expect(
+    clippy::string_slice,
+    reason = "the slicing arms are reached only when hex is ASCII (the guard arm), so every byte offset is a char boundary"
+)]
 pub(super) fn parse_color(s: &str) -> Result<PdfColor, String> {
     match s.to_lowercase().as_str() {
         "black" => return Ok(PdfColor::BLACK),
@@ -189,6 +193,7 @@ pub(super) fn parse_color(s: &str) -> Result<PdfColor, String> {
         |h: &str| u8::from_str_radix(h, 16).map_err(|_| format!("Invalid hex color: '{s}'"));
 
     match hex.len() {
+        3 | 6 | 8 if !hex.is_ascii() => Err(format!("Invalid hex color: '{s}'")),
         3 => {
             let r = parse_hex(&hex[0..1])? * 17;
             let g = parse_hex(&hex[1..2])? * 17;
@@ -534,6 +539,16 @@ mod tests {
     fn test_parse_color_invalid_hex() {
         let result = parse_color("#GG0000");
         assert!(result.is_err());
+    }
+
+    /// bug-0019: a non-ASCII value whose byte length is 3, 6 or 8 used to panic
+    /// on a byte-offset slice inside the multibyte character.
+    #[test]
+    fn test_parse_color_non_ascii_is_refused_not_panicked() {
+        for value in ["é1", "#1éaaa", "12345é7"] {
+            let err = parse_color(value).unwrap_err();
+            assert!(err.contains("Invalid hex color"), "{value}: {err}");
+        }
     }
 
     #[test]

@@ -5,6 +5,11 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.5] — 2026-11-15
+### Fixed
+- A non-ASCII `color=` value on `--watermark`, `--draw-rect` or `--draw-line` used to panic
+  (exit 101); it is now refused with exit 2 and an "Invalid hex color" message.  (bug-0019)
+
 ## [0.24.4] — 2026-11-14
 ### Changed
 - Adopts a shared lint set: `clippy.toml`, a `[lints.clippy]` table in `Cargo.toml`, reasoned

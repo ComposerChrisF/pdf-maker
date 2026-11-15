@@ -582,6 +582,30 @@ fn cli_out_of_range_page_mixed_with_valid_page_errors() {
 }
 
 #[test]
+fn cli_non_ascii_color_is_a_usage_error_not_a_panic() {
+    // bug-0019: `color=é1` used to panic (exit 101) on a byte-offset slice.
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.pdf");
+
+    let result = pdf_maker_bin()
+        .args([
+            "-o",
+            output.to_str().unwrap(),
+            "--blank-page",
+            "letter",
+            "--draw-rect",
+            "x=10,y=10,w=10,h=10,color=é1",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("Invalid hex color"), "{stderr}");
+    assert!(!output.exists(), "a refused command must write no file");
+}
+
+#[test]
 fn cli_out_of_range_page_names_the_page_and_the_page_count() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in.pdf");
