@@ -9,7 +9,7 @@
 #   cargo release tag       # tag <crate>-v<version> on the current commit
 #   cargo release push      # push the tag to origin
 #
-# PREREQUISITE: pdf-maker depends on medpdf + medpdf-image via path deps whose
+# PREREQUISITE: pdf-maker depends on medpdf + medpdf-image via git deps whose
 # `version = ...` requirements must already be satisfiable from crates.io before
 # pdf-maker can publish.  Publish the medpdf workspace FIRST (see the medpdf
 # repo's PUBLISHING.md), then pdf-maker.

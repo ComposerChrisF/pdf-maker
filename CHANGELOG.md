@@ -5,15 +5,27 @@ All notable changes to `pdf-maker` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+## [0.24.7] — 2026-11-16
+### Changed
+- `medpdf` and `medpdf-image` now come from their GitHub repository, pinned to a commit in
+  `Cargo.lock`, instead of from a checkout beside this one, so a fresh clone builds on its own.
+  The version requirements are unchanged.  (plan-0006)
+- The pin moves medpdf from 0.15.0 to 0.15.4, which brings two upstream fixes:
+  - A watermark, image or overlay on a page whose `/Resources` are inherited from an ancestor no
+    longer hides the page’s inherited fonts and images.
+  - A `font=` path that exists but cannot be read (a broken link, no permission) is now refused
+    with exit 1 naming the path.  It used to be looked up as a font family name instead, which
+    could embed a different installed font.
+
 ## [0.24.6] — 2026-11-16
 ### Changed
-- Adopts version 2 of the shared lint set's `clippy.toml`.  It found no excessively nested code in
+- Adopts version 2 of the shared lint set’s `clippy.toml`.  It found no excessively nested code in
   this crate.  No behavior change.
 
 ## [0.24.5] — 2026-11-15
 ### Fixed
 - A non-ASCII `color=` value on `--watermark`, `--draw-rect` or `--draw-line` used to panic
-  (exit 101); it is now refused with exit 2 and an "Invalid hex color" message.  (bug-0019)
+  (exit 101); it is now refused with exit 2 and an “Invalid hex color” message.  (bug-0019)
 
 ## [0.24.4] — 2026-11-14
 ### Changed
@@ -23,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.24.3] — 2026-11-13
 ### Changed
-- Rust 1.100 upkeep: `chunks_exact(2)` is now `as_chunks::<2>().0` at the two sites clippy's
+- Rust 1.100 upkeep: `chunks_exact(2)` is now `as_chunks::<2>().0` at the two sites clippy’s
   `chunks_exact_to_as_chunks` lint flags.  No behavior change.
 
 ## [0.24.2] — 2026-11-04

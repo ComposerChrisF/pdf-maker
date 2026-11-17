@@ -1295,7 +1295,8 @@ dependencies = [
 
 [[package]]
 name = "medpdf"
-version = "0.15.0"
+version = "0.15.4"
+source = "git+https://github.com/ComposerChrisF/medpdf#d8a842d22c804297bf041fc11423115562b3bc95"
 dependencies = [
  "allsorts",
  "font-kit",
@@ -1309,7 +1310,8 @@ dependencies = [
 
 [[package]]
 name = "medpdf-image"
-version = "0.4.7"
+version = "0.4.9"
+source = "git+https://github.com/ComposerChrisF/medpdf#d8a842d22c804297bf041fc11423115562b3bc95"
 dependencies = [
  "flate2",
  "image",
@@ -1512,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "pdf-maker"
-version = "0.24.6"
+version = "0.24.7"
 dependencies = [
  "chrono",
  "clap",

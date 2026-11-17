@@ -49,7 +49,7 @@ Both are open bugs in that repo and both are cheap to avoid up front:
 
 ## Implementation Notes
 
-- Dependency: pdf-maker does not currently depend on `medpdf-image` for this path — check whether the `recompress` feature needs enabling, and keep it behind the same version-plus-path arrangement as `medpdf` (`PUBLISHING.md`).
+- Dependency: pdf-maker does not currently depend on `medpdf-image` for this path — check whether the `recompress` feature needs enabling, and keep it behind the same version-plus-git arrangement as `medpdf` (`PUBLISHING.md`).
 - Pipeline placement: a new phase between drawing commands and padding, i.e. after all content exists and before save.  Recompression rewrites image XObjects in the merged document, so it must see the final object set.
 - Resolve `pages=` through `page_spec::expand` — never `medpdf::parse_page_spec` (CLAUDE.md invariant), so an out-of-range page is exit 1 rather than a silently narrowed scope.
 - Collect image XObject IDs for the scoped pages, including images reached through nested Form XObjects — bug-0037 is precisely the miss of that traversal.

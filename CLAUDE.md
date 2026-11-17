@@ -12,7 +12,7 @@ cargo test               # Run all tests
 
 ## Repo Structure
 
-This is a standalone crate (no workspace).  It depends on `medpdf` and `medpdf-image`, sibling crates developed in the adjacent `../medpdf` workspace and consumed here as `version + path` dependencies: local builds compile the path checkout, while the version requirement governs a crates.io publish.  See `PUBLISHING.md` (and `../medpdf/PUBLISHING.md`) for how the family is released.
+This is a standalone crate (no workspace).  It depends on `medpdf` and `medpdf-image`, both from the one medpdf workspace on GitHub, consumed here as `version + git` dependencies pinned to a commit in `Cargo.lock`: builds compile the pinned commit, while the version requirement governs a crates.io publish.  See `PUBLISHING.md` (and medpdf’s own `PUBLISHING.md`) for how the family is released.
 
 ```
 pdf-maker/                    # Repository root
@@ -37,6 +37,8 @@ pdf-maker/                    # Repository root
 
 - `medpdf` - Medium-level PDF library
 - `medpdf-image` - Image embedding companion crate
+
+`medpdf` and `medpdf-image` come from GitHub, pinned in `Cargo.lock`: take a newer commit with `cargo update -p <crate>` once it is pushed; to build against a local checkout, see the coding hub’s note on shared crates from GitHub (a `[patch."https://github.com/ComposerChrisF/medpdf"]` override, never committed).  The override drops the pin from the lock, and removing it does not bring the pin back: restore `Cargo.lock` and confirm with `cargo metadata --locked --format-version 1` before committing.
 
 ## Architecture
 
