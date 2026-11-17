@@ -54,6 +54,13 @@ cost and uncovered:
 - It **opened bug-0018** — imposition sized cells from the pre-rotation MediaBox, so a
   `/Rotate 90` source was placed upright but mis-scaled.  Fixed in v0.19.0, ahead of `--tile`.
 
+## When preparing the next crates.io publish
+
+- [ ] **Raise the medpdf floors** to `version = "0.15.4"` / `"0.4.9"` in the commit that
+  prepares the publish.  The 0.24.7 CHANGELOG credits two medpdf 0.15.4 fixes, but
+  `version = "0.15"` lets a crates.io build resolve an older 0.15.x without them.  Nothing on
+  crates.io satisfies 0.15 yet (`PUBLISHING.md`), so raising it earlier changes nothing.
+
 ## Open plans
 
 Proposed changes — options, not obligations — in `plans/`, numbered per
